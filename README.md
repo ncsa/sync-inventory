@@ -134,3 +134,8 @@ without worrying about overlapping runs:
 If a run is ever killed outright (e.g. `kill -9`), the lock can be left
 behind — `sync-inventory` will tell you exactly how to clear it
 (`rmdir .sync_inventory.lock`) if that happens.
+
+## To Do
+
+- Publish this package to a registry so it can be installed directly,
+  without cloning the repository first. Still in development.
