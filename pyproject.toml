@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sync-inventory"
+version = "0.1.0"
+description = "NetBox-driven Ansible inventory and playbook-command generation pipeline"
+requires-python = ">=3.9"
+dependencies = [
+    "PyYAML>=6.0",
+    "pynetbox>=7",
+]
+
+[project.scripts]
+sync-inventory = "sync_inventory.sync_inventory:main"
+fetch-meta = "sync_inventory.fetch_meta:main"
+pull-repo = "sync_inventory.pull_repo:main"
+generate-inventory = "sync_inventory.generate_inventory:main"
+generate-playbook-commands = "sync_inventory.generate_playbook_commands:main"
+list-vms = "sync_inventory.list_vms:main"
+
+[tool.setuptools.packages.find]
+include = ["sync_inventory*"]
