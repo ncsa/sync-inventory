@@ -7,48 +7,36 @@ automatically, safe to run on a cron.
 ## What it does
 
 Each host's `role` (which playbook to run) and `env` (which git branch to
-source it from) live in NetBox, embedded in the `description` field of its
-IP Address entry by [nbmeta](../nbmeta). `sync-inventory` turns that into a
-working Ansible setup in four steps:
+source it from) live in NetBox, entered there via [nbmeta](../nbmeta).
+`sync-inventory` turns that into a working Ansible setup, kept current
+automatically:
 
-1. **fetch-meta** — reads that metadata from NetBox and writes it out as
-   `hosts.json`, mapping each hostname to its `env`/`role`.
-2. **pull-repo** — mirrors every branch of the Ansible playbook repo into its
-   own directory under `repo/<branch>/`. Existing directories are reset hard
-   to match the remote (any local edits or stray files are wiped), so
-   `repo/` always reflects origin exactly.
-3. **generate-inventory** — groups hosts by `env` and writes one Ansible
-   YAML inventory per env to `inventory/<env>.yml`, with `role` values becoming
-   inventory groups. Every run first removes any inventory files left over
-   from an env that no longer has any hosts, so the directory always
-   reflects the current `hosts.json` exactly rather than accumulating stale
-   files. A missing `hosts.json` is treated as zero hosts (an empty
-   `inventory/`) rather than an error.
-4. **generate-playbook-commands** — for every group in every inventory,
-   checks whether a matching playbook actually exists in that branch's
-   checkout, and writes the valid `ansible-playbook` commands to
-   `commands.sh` — one command per env/role pair, each logging to its own
-   file under `logs/`.
+1. **Pull the latest host assignments from NetBox.**
+2. **Mirror every branch** of the Ansible playbook repo, so each environment's
+   playbooks are available locally and up to date.
+3. **Install each branch's dependencies** (roles and collections), so
+   different branches can rely on different dependency versions without
+   stepping on each other.
+4. **Build an Ansible inventory per environment**, complete with that
+   environment's own variables — so real settings actually apply, and two
+   environments with the same group name never share values by accident.
+5. **Generate the actual `ansible-playbook` commands** to run, one per
+   environment/role, each fully self-contained (its own config, its own
+   dependencies) so running several environments back to back never lets
+   one leak into another.
 
-Ansible group names may only contain letters, digits, and underscores. Since
-`role` values come from NetBox as free-form text, any other character (a
-hyphen, a dot, etc.) is replaced with `_` before it's used as a group name —
-this avoids Ansible's `Invalid characters were found in group names`
-warning. Two roles that sanitize to the same name (e.g. `web-server` and
-`web_server`) are merged into a single group rather than colliding.
+The end result sitting in the project directory: `commands.sh`, a plain
+shell script listing every command that's ready to run. Nothing runs
+automatically unless you ask it to (see [Quick guide](#quick-guide) below).
 
-A single host with an `env` that doesn't match any real branch, or a `role`
-with no matching playbook, doesn't stop the run — it's reported (as an
-`ERROR` for a missing branch, a `WARNING` for a missing playbook) and
-skipped, while everything else still gets generated. A failure to reach
-NetBox or the git remote is also just a warning: the pipeline falls back to
-whatever `hosts.json` / `repo/` checkouts already exist on disk rather than
-aborting. All of this — routine progress and every warning/error — is quiet
-by default; pass `-v`/`--verbose` (on `sync-inventory` or any individual
-command) to see it.
-
-`commands.sh` is generated, not run, unless you ask for it — see [Quick
-guide](#quick-guide) below.
+It's built to keep working even when something's incomplete or unreachable.
+A host pointed at a branch that doesn't exist, or a role with no matching
+playbook, gets skipped and reported rather than stopping everything else. A
+role name with characters Ansible doesn't allow in group names gets
+automatically cleaned up. Losing the connection to NetBox or the git remote
+just means it falls back to whatever it already had, rather than failing
+outright. All of this reporting is quiet by default — pass `-v`/`--verbose`
+(on `sync-inventory` or any individual command) when you want to see it.
 
 ## Install
 
@@ -62,9 +50,9 @@ source .venv/bin/activate
 pip install -e .
 ```
 
-This installs six commands into your virtualenv: `sync-inventory`,
-`fetch-meta`, `pull-repo`, `generate-inventory`, `generate-playbook-commands`,
-and `list-vms`.
+This installs seven commands into your virtualenv: `sync-inventory`,
+`fetch-meta`, `pull-repo`, `install-requirements`, `generate-inventory`,
+`generate-playbook-commands`, and `list-vms`.
 
 ### Configuration
 
@@ -136,6 +124,7 @@ Run an individual step on its own (each accepts `--help` for its own flags):
 ```bash
 fetch-meta
 pull-repo git@example.com:org/ansible-playbooks.git
+install-requirements
 generate-inventory
 generate-playbook-commands
 ```
