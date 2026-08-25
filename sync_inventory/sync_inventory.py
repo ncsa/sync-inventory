@@ -2,23 +2,35 @@
 """Sync inventory: fetch metadata, pull each branch, regenerate inventories, regenerate commands.
 
 Steps:
-  1. fetch-meta  - refresh the netbox-style hosts file from NetBox (nbmeta metadata)
-  2. pull-repo   - mirror each branch of the git repo into repo/<branch>/
-  3. install-requirements - install each branch's roles/collections from its
-     requirements.yml into repo/<branch>/.ansible/{roles,collections}
-  4. generate-inventory - rebuild inventory/<env>/hosts.yml from the hosts file,
-     copying that branch's real group_vars/host_vars in alongside it
-  5. generate-playbook-commands - rebuild commands.sh from inventory/ + repo/,
-     pointing each command's ANSIBLE_CONFIG/ANSIBLE_ROLES_PATH/
-     ANSIBLE_COLLECTIONS_PATH at that branch's own config and installed deps
+
+  1. fetch-meta
+     Refresh the netbox-style hosts file from NetBox (nbmeta metadata).
+
+  2. pull-repo
+     Mirror each branch of the git repo into repo/<branch>/.
+
+  3. install-requirements
+     Install each branch's roles/collections from its requirements.yml
+     into repo/<branch>/.ansible/{roles,collections}.
+
+  4. generate-inventory
+     Rebuild inventory/<env>/hosts.yml from the hosts file, copying that
+     branch's real group_vars/host_vars in alongside it.
+
+  5. generate-playbook-commands
+     Rebuild commands.sh from inventory/ + repo/, pointing each command's
+     ANSIBLE_CONFIG/ANSIBLE_ROLES_PATH/ANSIBLE_COLLECTIONS_PATH at that
+     branch's own config and installed deps.
 
 A failure in step 1, 2, or 3 (e.g. NetBox/network unreachable) does not
-block the rest, since steps 4/5 just need whatever hosts file / repo
-checkouts / installed dependencies already exist on disk. Quiet by
-default: routine progress and warning/error messages are only printed
-with --verbose. Refuses to run if another instance is already in progress
-(lock: .sync_inventory.lock in the current directory) regardless of
-verbosity.
+block the rest, since steps 4/5 just need whatever hosts file, repo
+checkouts, and installed dependencies already exist on disk.
+
+Quiet by default: routine progress and warning/error messages are only
+printed with --verbose.
+
+Refuses to run if another instance is already in progress (lock:
+.sync_inventory.lock in the current directory) regardless of verbosity.
 """
 
 import argparse
@@ -35,7 +47,7 @@ LOCK_DIR = Path(".sync_inventory.lock")
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
         "-u", "--repo-url", required=True,
         help="Git repo to mirror branches from",

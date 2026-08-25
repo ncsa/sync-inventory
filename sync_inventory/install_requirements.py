@@ -70,7 +70,7 @@ def install_requirements(repo_dir="repo", verbose=False):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
         "--repo-dir", default="repo",
         help="Directory containing per-branch checkouts (default: %(default)s)",

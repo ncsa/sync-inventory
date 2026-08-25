@@ -114,7 +114,7 @@ def generate_playbook_commands(inventory_dir="inventory", repo_dir="repo", comma
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
         "--inventory-dir", default="inventory",
         help="Directory containing per-env inventory subdirectories (default: %(default)s)",

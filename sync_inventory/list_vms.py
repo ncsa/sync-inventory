@@ -6,7 +6,7 @@ import json
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
         "--hosts-file", default="hosts.json",
         help="Path to the netbox-style hosts JSON file (default: %(default)s)",

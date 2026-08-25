@@ -127,7 +127,7 @@ def fetch_meta(hosts_file="hosts.json", ansible_only=True, verbose=False):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
         "--hosts-file", default="hosts.json",
         help="Where to write the fetched hosts JSON (default: %(default)s)",

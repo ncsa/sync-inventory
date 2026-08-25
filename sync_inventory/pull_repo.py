@@ -72,7 +72,7 @@ def pull_repo(repo_url, repo_dir="repo", verbose=False):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("repo_url", help="URL or path of the git repository to clone")
     parser.add_argument("-r", "--repo-dir", default="repo", help="Directory to hold per-branch checkouts (default: repo)")
     parser.add_argument("-v", "--verbose", action="store_true", help="Print routine progress and retry messages")
