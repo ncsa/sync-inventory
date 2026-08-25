@@ -19,12 +19,23 @@ working Ansible setup in four steps:
    `repo/` always reflects origin exactly.
 3. **generate-inventory** — groups hosts by `env` and writes one Ansible
    YAML inventory per env to `inventory/<env>.yml`, with `role` values becoming
-   inventory groups.
+   inventory groups. Every run first removes any inventory files left over
+   from an env that no longer has any hosts, so the directory always
+   reflects the current `hosts.json` exactly rather than accumulating stale
+   files. A missing `hosts.json` is treated as zero hosts (an empty
+   `inventory/`) rather than an error.
 4. **generate-playbook-commands** — for every group in every inventory,
    checks whether a matching playbook actually exists in that branch's
    checkout, and writes the valid `ansible-playbook` commands to
    `commands.sh` — one command per env/role pair, each logging to its own
    file under `logs/`.
+
+Ansible group names may only contain letters, digits, and underscores. Since
+`role` values come from NetBox as free-form text, any other character (a
+hyphen, a dot, etc.) is replaced with `_` before it's used as a group name —
+this avoids Ansible's `Invalid characters were found in group names`
+warning. Two roles that sanitize to the same name (e.g. `web-server` and
+`web_server`) are merged into a single group rather than colliding.
 
 A single host with an `env` that doesn't match any real branch, or a `role`
 with no matching playbook, doesn't stop the run — it's reported (as an
@@ -32,7 +43,9 @@ with no matching playbook, doesn't stop the run — it's reported (as an
 skipped, while everything else still gets generated. A failure to reach
 NetBox or the git remote is also just a warning: the pipeline falls back to
 whatever `hosts.json` / `repo/` checkouts already exist on disk rather than
-aborting.
+aborting. All of this — routine progress and every warning/error — is quiet
+by default; pass `-v`/`--verbose` (on `sync-inventory` or any individual
+command) to see it.
 
 `commands.sh` is generated, not run, unless you ask for it — see [Quick
 guide](#quick-guide) below.
@@ -95,6 +108,13 @@ Point it at a different playbook repo, or override other non-default paths
 
 ```bash
 sync-inventory --repo-url git@example.com:org/other-repo.git --logs-dir ~/ansible-logs
+```
+
+See routine progress and every warning/error as it happens (quiet by
+default otherwise):
+
+```bash
+sync-inventory -u git@example.com:org/ansible-playbooks.git -v
 ```
 
 See what's assigned to run where, straight from `hosts.json`:
