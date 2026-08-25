@@ -22,7 +22,10 @@ is removed rather than left behind). A missing hosts file is treated the
 same as an empty one (zero hosts, --inventory-dir ends up empty) rather
 than raising an error. Role values become Ansible group names, which may
 only contain letters, digits, and underscores; any other character (e.g.
-a hyphen or dot) is replaced with an underscore before use.
+a hyphen or dot) is replaced with an underscore before use. Env values
+become a directory name, so "/" and "-" are replaced with "_" the same
+way pull-repo sanitizes branch directory names, keeping repo/<branch>/
+and inventory/<env>/ referring to the same branch.
 """
 
 import argparse
@@ -33,6 +36,8 @@ from collections import defaultdict
 from pathlib import Path
 
 import yaml
+
+from sync_inventory.naming import sanitize_dir_name
 
 INVALID_GROUP_CHARS = re.compile(r"[^A-Za-z0-9_]")
 
@@ -55,11 +60,22 @@ def sanitize_group_name(role, verbose=False):
     return sanitized
 
 
+def sanitize_env_name(env, verbose=False):
+    """Match pull-repo's branch-directory sanitization, so repo/<branch>/ and
+    inventory/<env>/ refer to the same branch for a feature branch like
+    "pttran3/SVCPLAN-1234/test"."""
+    sanitized = sanitize_dir_name(env)
+    if sanitized != env and verbose:
+        print(f"warning: env '{env}' has invalid directory characters; using '{sanitized}' instead")
+    return sanitized
+
+
 def group_by_env(hosts, verbose=False):
     envs = defaultdict(lambda: defaultdict(list))
     for hostname, meta in hosts.items():
+        env = sanitize_env_name(meta["env"], verbose=verbose)
         role = sanitize_group_name(meta["role"], verbose=verbose)
-        envs[meta["env"]][role].append(hostname)
+        envs[env][role].append(hostname)
     return envs
 
 

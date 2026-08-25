@@ -7,6 +7,12 @@ Read-only mirror, safe to run repeatedly (e.g. via cron every 30 minutes):
     always matches origin exactly, even if someone hand-edits a file in it)
   - Branch directory doesn't exist  -> git clone
 
+A branch name's "/" and "-" characters become "_" in its directory name
+(e.g. "pttran3/SVCPLAN-1234/test" -> repo/pttran3_SVCPLAN_1234_test/), so
+nested branches don't create unwanted nested directories. The actual git
+operations still use the real branch name; only the local directory name
+is sanitized.
+
 Quiet by default; pass --verbose to see routine progress and retry messages.
 
 Usage:
@@ -17,6 +23,8 @@ import argparse
 import subprocess
 import time
 from pathlib import Path
+
+from sync_inventory.naming import sanitize_dir_name
 
 RETRIES = 3
 RETRY_DELAY = 5
@@ -57,7 +65,10 @@ def pull_repo(repo_url, repo_dir="repo", verbose=False):
         raise SystemExit(f"No branches found in {repo_url}")
 
     for branch in branches:
-        branch_dir = repo_dir / branch.replace("/", "_")
+        dir_name = sanitize_dir_name(branch)
+        if dir_name != branch and verbose:
+            print(f"Branch '{branch}' -> directory '{dir_name}'")
+        branch_dir = repo_dir / dir_name
 
         if branch_dir.is_dir():
             if verbose:
