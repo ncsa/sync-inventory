@@ -20,17 +20,17 @@ fresh ones for envs currently present in the hosts file. This keeps the
 directory in sync even when an env loses all its hosts (its subdirectory
 is removed rather than left behind). A missing hosts file is treated the
 same as an empty one (zero hosts, --inventory-dir ends up empty) rather
-than raising an error. Role values become Ansible group names, which may
-only contain letters, digits, and underscores; any other character (e.g.
-a hyphen or dot) is replaced with an underscore before use. Env values
-become a directory name, so "/" and "-" are replaced with "_" the same
-way pull-repo sanitizes branch directory names, keeping repo/<branch>/
-and inventory/<env>/ referring to the same branch.
+than raising an error. Role values are used as-is for the Ansible group
+name (generate-playbook-commands relies on this matching the real
+playbook filename on disk, so it's deliberately not sanitized -- Ansible
+will warn about invalid group-name characters itself if a role has any).
+Env values become a directory name, so "/" and "-" are replaced with "_"
+the same way pull-repo sanitizes branch directory names, keeping
+repo/<branch>/ and inventory/<env>/ referring to the same branch.
 """
 
 import argparse
 import json
-import re
 import shutil
 from collections import defaultdict
 from pathlib import Path
@@ -38,8 +38,6 @@ from pathlib import Path
 import yaml
 
 from sync_inventory.naming import sanitize_dir_name
-
-INVALID_GROUP_CHARS = re.compile(r"[^A-Za-z0-9_]")
 
 
 def load_hosts(hosts_file, verbose=False):
@@ -50,14 +48,6 @@ def load_hosts(hosts_file, verbose=False):
         if verbose:
             print(f"warning: hosts file '{hosts_file}' not found; treating as empty")
         return {}
-
-
-def sanitize_group_name(role, verbose=False):
-    """Ansible group names may only contain [A-Za-z0-9_]; replace anything else with _."""
-    sanitized = INVALID_GROUP_CHARS.sub("_", role)
-    if sanitized != role and verbose:
-        print(f"warning: role '{role}' has invalid group-name characters; using '{sanitized}' instead")
-    return sanitized
 
 
 def sanitize_env_name(env, verbose=False):
@@ -74,8 +64,7 @@ def group_by_env(hosts, verbose=False):
     envs = defaultdict(lambda: defaultdict(list))
     for hostname, meta in hosts.items():
         env = sanitize_env_name(meta["env"], verbose=verbose)
-        role = sanitize_group_name(meta["role"], verbose=verbose)
-        envs[env][role].append(hostname)
+        envs[env][meta["role"]].append(hostname)
     return envs
 
 

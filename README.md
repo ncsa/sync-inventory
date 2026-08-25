@@ -31,12 +31,11 @@ automatically unless you ask it to (see [Quick guide](#quick-guide) below).
 
 It's built to keep working even when something's incomplete or unreachable.
 A host pointed at a branch that doesn't exist, or a role with no matching
-playbook, gets skipped and reported rather than stopping everything else. A
-role name with characters Ansible doesn't allow in group names gets
-automatically cleaned up. Losing the connection to NetBox or the git remote
-just means it falls back to whatever it already had, rather than failing
-outright. All of this reporting is quiet by default — pass `-v`/`--verbose`
-(on `sync-inventory` or any individual command) when you want to see it.
+playbook, gets skipped and reported rather than stopping everything else.
+Losing the connection to NetBox or the git remote just means it falls back
+to whatever it already had, rather than failing outright. All of this
+reporting is quiet by default — pass `-v`/`--verbose` (on `sync-inventory`
+or any individual command) when you want to see it.
 
 ## Install
 
