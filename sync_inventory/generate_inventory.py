@@ -1,9 +1,23 @@
 #!/usr/bin/env python3
-"""Generate one Ansible YAML inventory per env from a netbox-style hosts JSON file.
+"""Generate one Ansible inventory directory per env from a netbox-style hosts JSON file.
 
-Every run first removes any existing *.yml files in --inventory-dir, then
-writes a fresh one per env currently present in the hosts file. This keeps
-the directory in sync even when an env loses all its hosts (its stale file
+Each env gets its own subdirectory under --inventory-dir:
+
+    inventory/<env>/hosts.yml        - the generated inventory
+    inventory/<env>/group_vars/      - copied from repo/<env>/inventory/group_vars/, if present
+    inventory/<env>/host_vars/       - copied from repo/<env>/inventory/host_vars/, if present
+
+This matters because Ansible discovers group_vars/host_vars relative to the
+directory containing the inventory file passed to -i, not the playbook
+being run. Keeping the generated hosts.yml, group_vars, and host_vars
+together per env means the real per-branch group_vars/host_vars in the
+playbook repo actually get applied, and keeping each env in its own
+subdirectory (rather than one shared group_vars/ for every env) avoids
+different envs' same-named groups colliding with different values.
+
+Every run first removes any existing per-env subdirectories, then writes
+fresh ones for envs currently present in the hosts file. This keeps the
+directory in sync even when an env loses all its hosts (its subdirectory
 is removed rather than left behind). A missing hosts file is treated the
 same as an empty one (zero hosts, --inventory-dir ends up empty) rather
 than raising an error. Role values become Ansible group names, which may
@@ -14,6 +28,7 @@ a hyphen or dot) is replaced with an underscore before use.
 import argparse
 import json
 import re
+import shutil
 from collections import defaultdict
 from pathlib import Path
 
@@ -48,7 +63,20 @@ def group_by_env(hosts, verbose=False):
     return envs
 
 
-def write_inventory(env, roles, inventory_dir, verbose=False):
+def copy_vars(env_source_dir, env_dir, subdir_name, verbose=False):
+    src = env_source_dir / subdir_name
+    dest = env_dir / subdir_name
+    if not src.is_dir():
+        return
+    shutil.copytree(src, dest)
+    if verbose:
+        print(f"Copied {src} -> {dest}")
+
+
+def write_inventory(env, roles, inventory_dir, repo_dir, verbose=False):
+    env_dir = inventory_dir / env
+    env_dir.mkdir(parents=True, exist_ok=True)
+
     inventory = {
         "all": {
             "children": {
@@ -58,26 +86,32 @@ def write_inventory(env, roles, inventory_dir, verbose=False):
         }
     }
 
-    out_path = inventory_dir / f"{env}.yml"
+    out_path = env_dir / "hosts.yml"
     with open(out_path, "w") as f:
         yaml.safe_dump(inventory, f, sort_keys=False)
     if verbose:
         print(f"Wrote {out_path}")
 
+    repo_inventory_dir = repo_dir / env / "inventory"
+    copy_vars(repo_inventory_dir, env_dir, "group_vars", verbose=verbose)
+    copy_vars(repo_inventory_dir, env_dir, "host_vars", verbose=verbose)
 
-def generate_inventory(hosts_file="hosts.json", inventory_dir="inventory", verbose=False):
+
+def generate_inventory(hosts_file="hosts.json", inventory_dir="inventory", repo_dir="repo", verbose=False):
     inventory_dir = Path(inventory_dir)
+    repo_dir = Path(repo_dir)
     inventory_dir.mkdir(parents=True, exist_ok=True)
 
-    for stale in inventory_dir.glob("*.yml"):
-        stale.unlink()
-        if verbose:
-            print(f"Removed stale {stale}")
+    for stale in inventory_dir.iterdir():
+        if stale.is_dir():
+            shutil.rmtree(stale)
+            if verbose:
+                print(f"Removed stale {stale}")
 
     hosts = load_hosts(hosts_file, verbose=verbose)
     envs = group_by_env(hosts, verbose=verbose)
     for env, roles in envs.items():
-        write_inventory(env, roles, inventory_dir, verbose=verbose)
+        write_inventory(env, roles, inventory_dir, repo_dir, verbose=verbose)
 
 
 def main():
@@ -88,12 +122,16 @@ def main():
     )
     parser.add_argument(
         "--inventory-dir", default="inventory",
-        help="Directory to write per-env inventory YAML files (default: %(default)s)",
+        help="Directory to write per-env inventory subdirectories into (default: %(default)s)",
     )
-    parser.add_argument("-v", "--verbose", action="store_true", help="Print each inventory file written")
+    parser.add_argument(
+        "--repo-dir", default="repo",
+        help="Directory containing per-branch checkouts, to copy each env's real group_vars/host_vars from (default: %(default)s)",
+    )
+    parser.add_argument("-v", "--verbose", action="store_true", help="Print each inventory file written and vars copied")
     args = parser.parse_args()
 
-    generate_inventory(args.hosts_file, args.inventory_dir, verbose=args.verbose)
+    generate_inventory(args.hosts_file, args.inventory_dir, args.repo_dir, verbose=args.verbose)
 
 
 if __name__ == "__main__":

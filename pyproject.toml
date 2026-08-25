@@ -16,6 +16,7 @@ dependencies = [
 sync-inventory = "sync_inventory.sync_inventory:main"
 fetch-meta = "sync_inventory.fetch_meta:main"
 pull-repo = "sync_inventory.pull_repo:main"
+install-requirements = "sync_inventory.install_requirements:main"
 generate-inventory = "sync_inventory.generate_inventory:main"
 generate-playbook-commands = "sync_inventory.generate_playbook_commands:main"
 list-vms = "sync_inventory.list_vms:main"

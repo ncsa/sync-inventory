@@ -4,15 +4,21 @@
 Steps:
   1. fetch-meta  - refresh the netbox-style hosts file from NetBox (nbmeta metadata)
   2. pull-repo   - mirror each branch of the git repo into repo/<branch>/
-  3. generate-inventory - rebuild output/<env>.yml from the netbox-style hosts file
-  4. generate-playbook-commands - rebuild commands.sh from output/ + repo/
+  3. install-requirements - install each branch's roles/collections from its
+     requirements.yml into repo/<branch>/.ansible/{roles,collections}
+  4. generate-inventory - rebuild inventory/<env>/hosts.yml from the hosts file,
+     copying that branch's real group_vars/host_vars in alongside it
+  5. generate-playbook-commands - rebuild commands.sh from inventory/ + repo/,
+     pointing each command's ANSIBLE_CONFIG/ANSIBLE_ROLES_PATH/
+     ANSIBLE_COLLECTIONS_PATH at that branch's own config and installed deps
 
-A failure in step 1 or 2 (e.g. NetBox/network unreachable) does not block
-the rest, since steps 3/4 just need whatever hosts file / repo checkouts
-already exist on disk. Quiet by default: routine progress and warning/error
-messages are only printed with --verbose. Refuses to run if another
-instance is already in progress (lock: .sync_inventory.lock in the current
-directory) regardless of verbosity.
+A failure in step 1, 2, or 3 (e.g. NetBox/network unreachable) does not
+block the rest, since steps 4/5 just need whatever hosts file / repo
+checkouts / installed dependencies already exist on disk. Quiet by
+default: routine progress and warning/error messages are only printed
+with --verbose. Refuses to run if another instance is already in progress
+(lock: .sync_inventory.lock in the current directory) regardless of
+verbosity.
 """
 
 import argparse
@@ -22,6 +28,7 @@ from pathlib import Path
 from sync_inventory.fetch_meta import fetch_meta
 from sync_inventory.generate_inventory import generate_inventory
 from sync_inventory.generate_playbook_commands import generate_playbook_commands
+from sync_inventory.install_requirements import install_requirements
 from sync_inventory.pull_repo import pull_repo
 
 LOCK_DIR = Path(".sync_inventory.lock")
@@ -72,7 +79,13 @@ def main():
             if args.verbose:
                 print(f"WARNING: pull-repo failed ({e}); continuing with existing {args.repo_dir}/ state")
 
-        generate_inventory(args.hosts_file, args.inventory_dir, verbose=args.verbose)
+        try:
+            install_requirements(args.repo_dir, verbose=args.verbose)
+        except Exception as e:
+            if args.verbose:
+                print(f"WARNING: install-requirements failed ({e}); continuing with existing {args.repo_dir}/ dependencies")
+
+        generate_inventory(args.hosts_file, args.inventory_dir, args.repo_dir, verbose=args.verbose)
         generate_playbook_commands(args.inventory_dir, args.repo_dir, args.commands_file, args.logs_dir, verbose=args.verbose)
 
         if args.run:
