@@ -25,9 +25,11 @@ automatically:
    dependencies) so running several environments back to back never lets
    one leak into another.
 
-The end result sitting in the project directory: `commands.sh`, a plain
-shell script listing every command that's ready to run. Nothing runs
-automatically unless you ask it to (see [Quick guide](#quick-guide) below).
+The end result sitting in the project directory: a `commands/` folder with
+one ready-to-run script per environment/role (e.g.
+`commands/prod_a_webserver.sh`). Nothing runs automatically — `sync-inventory`
+only generates these; running one (or all of them) is a separate step, with
+`run-play` (see [Quick guide](#quick-guide) below).
 
 It's built to keep working even when something's incomplete or unreachable.
 A host pointed at a branch that doesn't exist, or a role with no matching
@@ -49,9 +51,9 @@ source .venv/bin/activate
 pip install -e .
 ```
 
-This installs seven commands into your virtualenv: `sync-inventory`,
+This installs eight commands into your virtualenv: `sync-inventory`,
 `fetch-meta`, `pull-repo`, `install-requirements`, `generate-inventory`,
-`generate-playbook-commands`, and `list-vms`.
+`generate-playbook-commands`, `run-play`, and `list-vms`.
 
 ### Configuration
 
@@ -77,10 +79,24 @@ inventories and commands). `-u/--repo-url` is required — there's no default:
 sync-inventory -u git@example.com:org/ansible-playbooks.git
 ```
 
-Also actually execute the generated `ansible-playbook` commands:
+`sync-inventory` only (re)generates `commands/`; it never runs anything
+itself. To actually execute a generated script (a real `ansible-playbook`
+run), use `run-play` — one script by name, or every script under
+`commands/`:
 
 ```bash
-sync-inventory -u git@example.com:org/ansible-playbooks.git --run
+run-play -p pttran3_test_branch_proxmox
+run-play --all
+```
+
+Each run is logged to its own file under `logs/`, named after the script
+(e.g. `logs/pttran3_test_branch_proxmox.log`).
+
+Target a single host instead of the script's whole group, e.g. to test one
+box before rolling out to the rest:
+
+```bash
+run-play -p pttran3_test_branch_proxmox -H some-host.example.com
 ```
 
 Skip the NetBox fetch and use `hosts.json` as-is (e.g. while testing
@@ -94,7 +110,7 @@ Point it at a different playbook repo, or override other non-default paths
 (run `sync-inventory --help` for the full list):
 
 ```bash
-sync-inventory --repo-url git@example.com:org/other-repo.git --logs-dir ~/ansible-logs
+sync-inventory --repo-url git@example.com:org/other-repo.git --commands-dir ~/generated-commands
 ```
 
 See routine progress and every warning/error as it happens (quiet by
@@ -126,6 +142,7 @@ pull-repo git@example.com:org/ansible-playbooks.git
 install-requirements
 generate-inventory
 generate-playbook-commands
+run-play -p pttran3_test_branch_proxmox
 ```
 
 ### Running on a schedule

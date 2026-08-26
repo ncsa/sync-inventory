@@ -18,13 +18,16 @@ Steps:
      branch's real group_vars/host_vars in alongside it.
 
   5. generate-playbook-commands
-     Rebuild commands.sh from inventory/ + repo/, pointing each command's
-     ANSIBLE_CONFIG/ANSIBLE_ROLES_PATH/ANSIBLE_COLLECTIONS_PATH at that
-     branch's own config and installed deps.
+     Rebuild commands/<env>_<role>.sh scripts from inventory/ + repo/, each
+     pointing its ANSIBLE_CONFIG/ANSIBLE_ROLES_PATH/ANSIBLE_COLLECTIONS_PATH
+     at that branch's own config and installed deps.
 
 A failure in step 1, 2, or 3 (e.g. NetBox/network unreachable) does not
 block the rest, since steps 4/5 just need whatever hosts file, repo
 checkouts, and installed dependencies already exist on disk.
+
+This command only regenerates commands/; it never runs them. Use run-play
+to actually execute a generated script (or all of them).
 
 Quiet by default: routine progress and warning/error messages are only
 printed with --verbose.
@@ -34,7 +37,6 @@ Refuses to run if another instance is already in progress (lock:
 """
 
 import argparse
-import subprocess
 from pathlib import Path
 
 from sync_inventory.fetch_meta import fetch_meta
@@ -55,9 +57,7 @@ def main():
     parser.add_argument("-r", "--repo-dir", default="repo", help="Where branch checkouts are written (default: %(default)s)")
     parser.add_argument("-i", "--inventory-dir", default="inventory", help="Where generated per-env inventories are written (default: %(default)s)")
     parser.add_argument("-n", "--hosts-file", default="hosts.json", help="NetBox-style hosts JSON (default: %(default)s)")
-    parser.add_argument("-c", "--commands-file", default="commands.sh", help="Where generated ansible-playbook commands are written (default: %(default)s)")
-    parser.add_argument("-l", "--logs-dir", default="logs", help="Where each ansible-playbook command writes its own log file (default: %(default)s)")
-    parser.add_argument("--run", action="store_true", help="Also execute the generated commands file (real ansible-playbook runs)")
+    parser.add_argument("-c", "--commands-dir", default="commands", help="Where each generated ansible-playbook command script is written (default: %(default)s)")
     parser.add_argument(
         "--skip-fetch-meta", action="store_true",
         help="Don't refresh the hosts file from NetBox; use it as-is on disk",
@@ -98,10 +98,7 @@ def main():
                 print(f"WARNING: install-requirements failed ({e}); continuing with existing {args.repo_dir}/ dependencies")
 
         generate_inventory(args.hosts_file, args.inventory_dir, args.repo_dir, verbose=args.verbose)
-        generate_playbook_commands(args.inventory_dir, args.repo_dir, args.commands_file, args.logs_dir, verbose=args.verbose)
-
-        if args.run:
-            subprocess.run(["bash", args.commands_file], check=True)
+        generate_playbook_commands(args.inventory_dir, args.repo_dir, args.commands_dir, verbose=args.verbose)
     finally:
         LOCK_DIR.rmdir()
 

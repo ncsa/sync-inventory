@@ -19,6 +19,7 @@ pull-repo = "sync_inventory.pull_repo:main"
 install-requirements = "sync_inventory.install_requirements:main"
 generate-inventory = "sync_inventory.generate_inventory:main"
 generate-playbook-commands = "sync_inventory.generate_playbook_commands:main"
+run-play = "sync_inventory.run_play:main"
 list-vms = "sync_inventory.list_vms:main"
 
 [tool.setuptools.packages.find]
