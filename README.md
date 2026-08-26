@@ -85,7 +85,7 @@ run), use `run-play` — one script by name, or every script under
 `commands/`:
 
 ```bash
-run-play -p pttran3_test_branch_proxmox
+run-play -s pttran3_test_branch_proxmox
 run-play --all
 ```
 
@@ -96,7 +96,13 @@ Target a single host instead of the script's whole group, e.g. to test one
 box before rolling out to the rest:
 
 ```bash
-run-play -p pttran3_test_branch_proxmox -H some-host.example.com
+run-play -s pttran3_test_branch_proxmox -H some-host.example.com
+```
+
+See what's available to run (the exact names `-s` accepts):
+
+```bash
+run-play --list
 ```
 
 Skip the NetBox fetch and use `hosts.json` as-is (e.g. while testing
@@ -142,7 +148,7 @@ pull-repo git@example.com:org/ansible-playbooks.git
 install-requirements
 generate-inventory
 generate-playbook-commands
-run-play -p pttran3_test_branch_proxmox
+run-play -s pttran3_test_branch_proxmox
 ```
 
 ### Running on a schedule

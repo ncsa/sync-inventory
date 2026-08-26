@@ -11,13 +11,14 @@ each one's combined stdout/stderr to its own file under --logs-dir, named
 
 A single host (rather than the whole group) can be targeted with -H/--host,
 which is passed through to the script and overrides its default --limit.
-Only valid with -p/--playbook -- not with --all, since that would run every
+Only valid with -s/--script -- not with --all, since that would run every
 script against that one host.
 
 Usage:
-    run-play -p pttran3_test_branch_proxmox
-    run-play -p pttran3_test_branch_proxmox -H some-host.example.com
+    run-play -s pttran3_test_branch_proxmox
+    run-play -s pttran3_test_branch_proxmox -H some-host.example.com
     run-play --all
+    run-play --list
 """
 
 import argparse
@@ -44,9 +45,19 @@ def run_script(script, logs_dir, host=None, quiet=False, verbose=False):
     return True
 
 
-def run_play(playbook=None, run_all=False, commands_dir="commands", logs_dir="logs", host=None, quiet=False, verbose=False):
+def list_commands(commands_dir="commands"):
+    commands_dir = Path(commands_dir)
+    scripts = sorted(p.stem for p in commands_dir.glob("*.sh"))
+    if not scripts:
+        print(f"No command scripts found under {commands_dir}")
+        return
+    for name in scripts:
+        print(name)
+
+
+def run_play(script_name=None, run_all=False, commands_dir="commands", logs_dir="logs", host=None, quiet=False, verbose=False):
     if run_all and host:
-        raise SystemExit("-H/--host can only be used with -p/--playbook, not --all")
+        raise SystemExit("-H/--host can only be used with -s/--script, not --all")
 
     commands_dir = Path(commands_dir)
     logs_dir = Path(logs_dir)
@@ -57,7 +68,7 @@ def run_play(playbook=None, run_all=False, commands_dir="commands", logs_dir="lo
         if not scripts:
             raise SystemExit(f"No command scripts found under {commands_dir}")
     else:
-        script = commands_dir / f"{playbook}.sh"
+        script = commands_dir / f"{script_name}.sh"
         if not script.is_file():
             raise SystemExit(f"No command script found at {script}")
         scripts = [script]
@@ -70,8 +81,9 @@ def run_play(playbook=None, run_all=False, commands_dir="commands", logs_dir="lo
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("-p", "--playbook", help="Name of a single command script to run (matches <commands-dir>/<name>.sh)")
+    group.add_argument("-s", "--script", help="Name of a single command script to run (matches <commands-dir>/<name>.sh)")
     group.add_argument("-a", "--all", action="store_true", help="Run every command script under --commands-dir")
+    group.add_argument("-l", "--list", action="store_true", help="List available command scripts under --commands-dir and exit")
     parser.add_argument("--commands-dir", default="commands", help="Directory containing generated command scripts (default: %(default)s)")
     parser.add_argument("--logs-dir", default="logs", help="Directory to write each command's log file into (default: %(default)s)")
     parser.add_argument("-H", "--host", help="Limit the run to a single host instead of the script's whole group")
@@ -79,9 +91,13 @@ def main():
     parser.add_argument("-v", "--verbose", action="store_true", help="Print each command as it runs")
     args = parser.parse_args()
     if args.all and args.host:
-        parser.error("-H/--host can only be used with -p/--playbook, not --all")
+        parser.error("-H/--host can only be used with -s/--script, not --all")
 
-    run_play(args.playbook, args.all, args.commands_dir, args.logs_dir, host=args.host, quiet=args.quiet, verbose=args.verbose)
+    if args.list:
+        list_commands(args.commands_dir)
+        return
+
+    run_play(args.script, args.all, args.commands_dir, args.logs_dir, host=args.host, quiet=args.quiet, verbose=args.verbose)
 
 
 if __name__ == "__main__":
