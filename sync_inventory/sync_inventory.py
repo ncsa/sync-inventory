@@ -48,6 +48,11 @@ from sync_inventory.pull_repo import pull_repo
 LOCK_DIR = Path(".sync_inventory.lock")
 
 
+def section(title, verbose):
+    if verbose:
+        print(f"\n===== {title} =====")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
@@ -78,26 +83,35 @@ def main():
         )
 
     try:
-        if not args.skip_fetch_meta:
+        section("fetch-meta", args.verbose)
+        if args.skip_fetch_meta:
+            if args.verbose:
+                print("Skipped (--skip-fetch-meta)")
+        else:
             try:
                 fetch_meta(args.hosts_file, verbose=args.verbose)
             except Exception as e:
                 if args.verbose:
                     print(f"WARNING: fetch-meta failed ({e}); continuing with existing {args.hosts_file}")
 
+        section("pull-repo", args.verbose)
         try:
             pull_repo(args.repo_url, args.repo_dir, verbose=args.verbose)
         except Exception as e:
             if args.verbose:
                 print(f"WARNING: pull-repo failed ({e}); continuing with existing {args.repo_dir}/ state")
 
+        section("install-requirements", args.verbose)
         try:
             install_requirements(args.repo_dir, verbose=args.verbose)
         except Exception as e:
             if args.verbose:
                 print(f"WARNING: install-requirements failed ({e}); continuing with existing {args.repo_dir}/ dependencies")
 
+        section("generate-inventory", args.verbose)
         generate_inventory(args.hosts_file, args.inventory_dir, args.repo_dir, verbose=args.verbose)
+
+        section("generate-playbook-commands", args.verbose)
         generate_playbook_commands(args.inventory_dir, args.repo_dir, args.commands_dir, verbose=args.verbose)
     finally:
         LOCK_DIR.rmdir()

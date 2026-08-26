@@ -57,12 +57,12 @@ def install_requirements(repo_dir="repo", verbose=False):
         }
 
         if verbose:
-            print(f"$ {' '.join(role_cmd)}")
-        subprocess.run(role_cmd, check=True, env=env)
+            print(f"$ {' '.join(role_cmd)}", flush=True)
+        subprocess.run(role_cmd, check=True, env=env, capture_output=not verbose)
 
         if verbose:
-            print(f"$ {' '.join(collection_cmd)}")
-        subprocess.run(collection_cmd, check=True, env=env)
+            print(f"$ {' '.join(collection_cmd)}", flush=True)
+        subprocess.run(collection_cmd, check=True, env=env, capture_output=not verbose)
 
         marker.touch()
         if verbose:
