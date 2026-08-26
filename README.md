@@ -70,10 +70,18 @@ export NETBOX_OWNERS=team-a,team-b
 Without these set, `sync-inventory` still works — it just warns and reuses
 whatever `hosts.json` is already on disk instead of refreshing it.
 
+`sync-inventory`'s `-u/--repo-url` can likewise be set via `REPO_URL`
+instead of passed on the command line:
+
+```bash
+export REPO_URL=git@example.com:org/ansible-playbooks.git
+```
+
 ## Quick guide
 
 Run the whole pipeline (fetch metadata, mirror branches, regenerate
-inventories and commands). `-u/--repo-url` is required — there's no default:
+inventories and commands). `-u/--repo-url` (or `REPO_URL` in the
+environment) is required — there's no default:
 
 ```bash
 sync-inventory -u git@example.com:org/ansible-playbooks.git

@@ -29,6 +29,9 @@ checkouts, and installed dependencies already exist on disk.
 This command only regenerates commands/; it never runs them. Use run-play
 to actually execute a generated script (or all of them).
 
+-u/--repo-url can also be set via the REPO_URL environment variable,
+same as NETBOX_URL/NETBOX_TOKEN/NETBOX_OWNERS are for fetch-meta.
+
 Quiet by default: routine progress and warning/error messages are only
 printed with --verbose.
 
@@ -37,6 +40,7 @@ Refuses to run if another instance is already in progress (lock:
 """
 
 import argparse
+import os
 from pathlib import Path
 
 from sync_inventory.fetch_meta import fetch_meta
@@ -56,8 +60,8 @@ def section(title, verbose):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
-        "-u", "--repo-url", required=True,
-        help="Git repo to mirror branches from",
+        "-u", "--repo-url", default=os.environ.get("REPO_URL"),
+        help="Git repo to mirror branches from (env: REPO_URL)",
     )
     parser.add_argument("-r", "--repo-dir", default="repo", help="Where branch checkouts are written (default: %(default)s)")
     parser.add_argument("-i", "--inventory-dir", default="inventory", help="Where generated per-env inventories are written (default: %(default)s)")
@@ -72,6 +76,8 @@ def main():
         help="Print routine progress plus warning/error messages (quiet by default)",
     )
     args = parser.parse_args()
+    if not args.repo_url:
+        parser.error("--repo-url is required (or set REPO_URL in the environment)")
 
     try:
         LOCK_DIR.mkdir()
