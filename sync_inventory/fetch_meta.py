@@ -4,8 +4,11 @@
 Reads the JSON metadata block that nbmeta (a sibling tool that manages this
 same NetBox metadata) embeds at the front of each NetBox IP Address's
 description field, and writes out a hosts JSON file mapping
-hostname -> {"env": ..., "role": ...}, in the same shape generate-inventory
-expects.
+hostname -> {"env": ..., "role": ..., "group": ...}, in the same shape
+generate-inventory expects. "group" is included only when nbmeta's metadata
+actually has one set -- it names which node of that role's
+group_structure/<role>.yml tree (see generate-inventory) the host belongs
+to, and is irrelevant for roles with no such file.
 
 Only entries with role/env actually set are included; entries missing
 either are reported as a warning and skipped rather than silently dropped.
@@ -94,6 +97,8 @@ def fetch_hosts(nb, owner_ids, ansible_only=True, verbose=False):
             continue
 
         hosts[ip.dns_name] = {"env": meta["env"], "role": meta["role"]}
+        if meta.get("group"):
+            hosts[ip.dns_name]["group"] = meta["group"]
     return hosts
 
 

@@ -20,6 +20,10 @@ automatically:
 4. **Build an Ansible inventory per environment**, complete with that
    environment's own variables — so real settings actually apply, and two
    environments with the same group name never share values by accident.
+   Every role needs a matching `group_structure/<role>.yml` in that
+   branch's checkout describing its group shape (see
+   [Nested groups](#nested-groups) below) — a missing or invalid one is an
+   error, not a silent fallback.
 5. **Generate the actual `ansible-playbook` commands** to run, one per
    environment/role, each fully self-contained (its own config, its own
    dependencies) so running several environments back to back never lets
@@ -32,12 +36,20 @@ only generates these; running one (or all of them) is a separate step, with
 `run-play` (see [Quick guide](#quick-guide) below).
 
 It's built to keep working even when something's incomplete or unreachable.
-A host pointed at a branch that doesn't exist, or a role with no matching
-playbook, gets skipped and reported rather than stopping everything else.
-Losing the connection to NetBox or the git remote just means it falls back
-to whatever it already had, rather than failing outright. All of this
-reporting is quiet by default — pass `-v`/`--verbose` (on `sync-inventory`
-or any individual command) when you want to see it.
+A host pointed at a branch that doesn't exist gets skipped and reported
+rather than stopping everything else. Losing the connection to NetBox or
+the git remote just means it falls back to whatever it already had, rather
+than failing outright. All of this reporting is quiet by default — pass
+`-v`/`--verbose` (on `sync-inventory` or any individual command) when you
+want to see it.
+
+Two things are deliberately *not* soft-skipped, and stop the run outright
+instead: a role with a missing or invalid `group_structure/<role>.yml`
+(silently falling back there could mean hosts vanish from the generated
+inventory with no clear explanation), and a role assigned to an env whose
+playbook file doesn't actually exist in that branch's checkout (a
+role/playbook mismatch is a real misconfiguration to fix, not something to
+quietly ignore).
 
 ## Install
 
@@ -77,6 +89,50 @@ instead of passed on the command line:
 export REPO_URL=git@example.com:org/ansible-playbooks.git
 ```
 
+### Nested groups
+
+Every `role` needs a `group_structure/<role>.yml` file describing its
+Ansible group shape — there's no automatic flat default. This file lives
+in the playbook repo itself, alongside `playbooks/`, `requirements.yml`,
+and `ansible.cfg` — so each branch (env) can have its own copy, same as
+those. A role with no real nesting just needs a minimal file with its own
+name and nothing else (e.g. `webserver:` on its own), which produces one
+flat group exactly like before. A role that does want real nesting
+describes the full shape, e.g. `group_structure/proxmox.yml`:
+
+```yaml
+proxmox:
+proxmox_test:
+  proxmox_test_one:
+  proxmox_test_two:
+proxmox_00:
+```
+
+There's no wrapper key — `proxmox`/`proxmox_test`/`proxmox_00` are three
+independent top-level siblings (not one root per role, and their names
+don't need to relate to each other). Below that top level, though, every
+group name must be prefixed with its immediate parent's name
+(`proxmox_test`'s children must start with `proxmox_test_`, not just
+`proxmox_`) — enforced when the file is loaded. Every node becomes a real
+group in the generated inventory whether or not it currently has hosts, so
+`group_vars` inheritance down the tree always works.
+
+A host lands in the node named by its NetBox `group` metadata (set via
+`nbmeta --group`); with no `group` set, it falls back to the node named
+after its own role — so a top-level sibling literally named after the role
+(`proxmox` in the example above) is required. A missing structure file, or
+one that's invalid in any way (a non-mapping top-level shape, a
+naming-convention violation, a repeated group name, or missing the
+required role-name group above), is a hard error rather than a silent
+fallback — silently falling back could otherwise mean hosts vanish from
+the generated inventory with no clear explanation. A `group` value that
+doesn't match any node in the tree is dropped with a warning (`-v`) rather
+than silently misplaced.
+
+Since scripts no longer pass `--limit` by default (see above), the
+matching playbook's own `hosts:` key decides which of these groups it
+actually targets — e.g. `hosts: "proxmox,proxmox_00,proxmox_test"`.
+
 ## Quick guide
 
 Run the whole pipeline (fetch metadata, mirror branches, regenerate
@@ -100,8 +156,8 @@ run-play --all
 Each run is logged to its own file under `logs/`, named after the script
 (e.g. `logs/pttran3_test_branch_proxmox.log`).
 
-Target a single host instead of the script's whole group, e.g. to test one
-box before rolling out to the rest:
+Target a single host on top of whatever the playbook's own `hosts:` key
+already targets, e.g. to test one box before rolling out to the rest:
 
 ```bash
 run-play -s pttran3_test_branch_proxmox -H some-host.example.com

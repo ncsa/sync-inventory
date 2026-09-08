@@ -15,7 +15,10 @@ Steps:
 
   4. generate-inventory
      Rebuild inventory/<env>/hosts.yml from the hosts file, copying that
-     branch's real group_vars/host_vars in alongside it.
+     branch's real group_vars/host_vars in alongside it. Every role needs a
+     matching repo/<branch>/group_structure/<role>.yml describing its group
+     shape (a minimal file with just the role's own name works for a role
+     with no real nesting); a missing or invalid one is a hard error.
 
   5. generate-playbook-commands
      Rebuild commands/<env>_<role>.sh scripts from inventory/ + repo/, each
@@ -118,7 +121,7 @@ def main():
         generate_inventory(args.hosts_file, args.inventory_dir, args.repo_dir, verbose=args.verbose)
 
         section("generate-playbook-commands", args.verbose)
-        generate_playbook_commands(args.inventory_dir, args.repo_dir, args.commands_dir, verbose=args.verbose)
+        generate_playbook_commands(args.inventory_dir, args.repo_dir, args.commands_dir, args.hosts_file, verbose=args.verbose)
     finally:
         LOCK_DIR.rmdir()
 
