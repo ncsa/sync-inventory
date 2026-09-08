@@ -22,9 +22,10 @@ script in --commands-dir and handles logging/failure-tracking itself.
 
 If a branch isn't checked out under repo/, an error is reported for that env
 and its commands are skipped. A role assigned to that env whose playbook
-file doesn't actually exist in that branch's checkout is a hard error --
-not a silent skip -- since the netbox data only records intent, and a
-role/playbook mismatch should be fixed rather than quietly ignored.
+file doesn't actually exist in that branch's checkout is reported (to
+stderr, always -- not just with --verbose) and skipped rather than
+stopping everything else, since the netbox data only records intent, not
+what playbooks actually exist.
 
 If that branch has its own ansible.cfg, ANSIBLE_CONFIG is set to it for that
 command (Ansible only auto-discovers ansible.cfg via the current directory,
@@ -41,6 +42,7 @@ that no longer applies doesn't leave a stale script behind.
 import argparse
 import shutil
 import stat
+import sys
 from pathlib import Path
 
 from sync_inventory.generate_inventory import group_by_env, load_hosts
@@ -107,7 +109,8 @@ def generate_playbook_commands(inventory_dir="inventory", repo_dir="repo", comma
         for role in sorted(envs.get(branch, {}).keys()):
             playbook_path = branch_dir / "playbooks" / f"{role}.yml"
             if not playbook_path.is_file():
-                raise SystemExit(f"error: role '{role}' has no playbook at {playbook_path}")
+                print(f"warning: role '{role}' has no playbook at {playbook_path}; skipping", file=sys.stderr)
+                continue
             script_path = commands_dir / f"{branch}_{role}.sh"
             write_command_script(script_path, env_vars, inventory_path, playbook_path, verbose=verbose)
 
@@ -130,7 +133,7 @@ def main():
         "--hosts-file", default="hosts.json",
         help="Path to the netbox-style hosts JSON file, to determine which roles are assigned to each env (default: %(default)s)",
     )
-    parser.add_argument("-v", "--verbose", action="store_true", help="Print branch/role warnings and errors, and each script written")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Print each script written (missing-playbook warnings always print, regardless of this flag)")
     args = parser.parse_args()
 
     generate_playbook_commands(args.inventory_dir, args.repo_dir, args.commands_dir, args.hosts_file, verbose=args.verbose)

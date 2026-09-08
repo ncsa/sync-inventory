@@ -22,18 +22,16 @@ is removed rather than left behind). A missing hosts file is treated the
 same as an empty one (zero hosts, --inventory-dir ends up empty) rather
 than raising an error.
 
-Every role needs a matching repo/<branch>/group_structure/<role>.yml
-describing its group shape (see build_group_tree() below) -- it lives in
-the playbook repo itself, alongside playbooks/, requirements.yml, and
-ansible.cfg, so each branch can have its own copy (same as those). There's
-no automatic flat fallback; a role with no file, or an invalid one, is a
-hard error. A role with no real nesting just needs a minimal file with its
-own name and nothing else, which produces the same one-flat-group result
-as the old automatic default. Group names are deliberately not sanitized --
-Ansible will warn about invalid group-name characters itself if a role
-has any. Env values become a directory name, so "/" and "-" are replaced
-with "_" the same way pull-repo sanitizes branch directory names, keeping
-repo/<branch>/ and inventory/<env>/ referring to the same branch.
+By default, a role gets one flat Ansible group named after the role itself
+(deliberately not sanitized -- Ansible will warn about invalid group-name
+characters itself if a role has any). If repo/<branch>/group_structure/
+has a <role>.yml file for that role, its (nested) group shape is used
+instead -- see build_group_tree() below. That file lives in the playbook
+repo itself, alongside playbooks/, requirements.yml, and ansible.cfg, so
+each branch can have its own copy (same as those). Env values become a
+directory name, so "/" and "-" are replaced with "_" the same way
+pull-repo sanitizes branch directory names, keeping repo/<branch>/ and
+inventory/<env>/ referring to the same branch.
 
 group_structure/<role>.yml format: a nested YAML mapping with no wrapper
 key -- the file's own top level *is* the set of top-level sibling groups,
@@ -46,11 +44,9 @@ e.g. group_structure/proxmox.yml:
     proxmox_00:
 
 proxmox/proxmox_test/proxmox_00 are three independent top-level siblings
-(not one root per role, and none of them need to relate to each other's
-names). Below that top level, though, every group name must be prefixed
-with its immediate parent's name (so proxmox_test's children must start
-with "proxmox_test_", not just "proxmox_") -- enforced when the file is
-loaded.
+(not one root per role); proxmox_test additionally nests two children of
+its own. Group names don't need to relate to their parent's name in any
+way -- there's no naming convention enforced, just the tree shape itself.
 
 Every node in the file becomes a real group in the generated inventory,
 whether or not it currently has any hosts -- this matters because a host
@@ -59,20 +55,25 @@ exist for Ansible's children: chain to carry group_vars inheritance down
 to it. A host lands in the node named by its NetBox "group" metadata field
 (see fetch-meta); with no "group" set, it falls back to the node named
 after its own role -- so a top-level sibling literally named after the
-role (e.g. "proxmox" in group_structure/proxmox.yml) is required. A
-"group" that doesn't match any node in the tree is dropped with a warning
-rather than silently misplaced.
+role (e.g. "proxmox" in group_structure/proxmox.yml) is expected to exist.
+A "group" that doesn't match any node in the tree is dropped rather than
+silently misplaced.
 
-A missing structure file, or one that's invalid in any way (a non-mapping
-top-level shape, a naming-convention violation, a repeated group name, or
-missing the required role-name group above), is a hard error rather than
-a silent fallback, since falling back could otherwise mean hosts vanish
-from the generated inventory with no clear explanation.
+A missing structure file just means flat single-group behavior for that
+role -- quietly, unless some host of that role has an explicit "group" set
+anyway (e.g. left over from before the file was removed, or set too
+early), in which case a warning is printed since that "group" is being
+silently ignored. A file that exists but is invalid in some way (a
+non-mapping top-level shape, a repeated group name, or missing the
+role-name group hosts fall back to) also falls back to flat behavior for
+that role, but prints a warning to stderr -- always, not just with
+--verbose -- since that's a real config problem worth noticing.
 """
 
 import argparse
 import json
 import shutil
+import sys
 from collections import defaultdict
 from pathlib import Path
 
@@ -115,35 +116,41 @@ def load_group_structure(role, group_structure_dir):
     """Load and validate group_structure_dir/<role>.yml. Returns the tree (a
     dict of group_name -> nested dict or None) directly -- there's no
     wrapper key, the file's own top level *is* the set of top-level
-    sibling groups. Every role needs one; a missing or invalid file is a
-    hard error, not a fallback."""
+    sibling groups. Returns None if the file doesn't exist or isn't a
+    valid structure file (missing/malformed, falls back to flat behavior
+    for that role -- a warning is printed to stderr either way, except
+    when the file simply doesn't exist at all)."""
     path = Path(group_structure_dir) / f"{role}.yml"
     if not path.is_file():
-        raise SystemExit(f"error: {path} does not exist (required for role '{role}')")
+        return None
 
     with open(path) as f:
         data = yaml.safe_load(f)
     tree = data or {}
 
-    def validate(node, parent_name, seen):
+    def validate(node, seen):
         if not isinstance(node, dict):
-            raise SystemExit(f"error: {path} is not a valid group structure (expected a mapping of group names)")
+            print(f"warning: {path} is not a valid group structure (expected a mapping of group names); ignoring, using flat group for '{role}'", file=sys.stderr)
+            return False
         for name, subtree in node.items():
-            if parent_name is not None and (not name.startswith(f"{parent_name}_") or len(name) <= len(parent_name) + 1):
-                raise SystemExit(f"error: {path} has '{name}', which doesn't start with its parent's name ('{parent_name}_')")
             if name in seen:
-                raise SystemExit(f"error: {path} has '{name}' repeated in more than one branch")
+                print(f"warning: {path} has '{name}' repeated in more than one branch; ignoring, using flat group for '{role}'", file=sys.stderr)
+                return False
             seen.add(name)
-            if subtree is not None:
-                validate(subtree, name, seen)
+            if subtree is not None and not validate(subtree, seen):
+                return False
+        return True
 
-    validate(tree, None, set())
+    if not validate(tree, set()):
+        return None
 
     if role not in tree:
-        raise SystemExit(
-            f"error: {path} must include '{role}' as one of its top-level groups "
-            f"(hosts of role '{role}' with no explicit 'group' set fall back to it)."
+        print(
+            f"warning: {path} has no top-level '{role}' group (needed for hosts with no explicit "
+            f"'group' set); ignoring, using flat group for '{role}'",
+            file=sys.stderr,
         )
+        return None
 
     return tree
 
@@ -168,14 +175,13 @@ def build_group_tree(tree, host_buckets, seen_names, verbose=False):
     return result
 
 
-def merge_children(children, new_entries, role, sources, verbose=False):
+def merge_children(children, new_entries, role, sources):
     """Merge a role's top-level group(s) into the env's shared `children` dict.
     Warns and keeps the first entry if two roles both define the same
     top-level group name, rather than silently letting one clobber the other."""
     for name, entry in new_entries.items():
         if name in children:
-            if verbose:
-                print(f"warning: group '{name}' is defined by both role '{sources[name]}' and role '{role}'; keeping '{sources[name]}''s")
+            print(f"warning: group '{name}' is defined by both role '{sources[name]}' and role '{role}'; keeping '{sources[name]}''s", file=sys.stderr)
             continue
         children[name] = entry
         sources[name] = role
@@ -200,16 +206,27 @@ def write_inventory(env, roles, inventory_dir, repo_dir, verbose=False):
     sources = {}
     for role, host_buckets in sorted(roles.items()):
         tree = load_group_structure(role, group_structure_dir)
-        seen_names = set()
-        built = build_group_tree(tree, host_buckets, seen_names, verbose=verbose)
-        for group_name, hostnames in host_buckets.items():
-            if group_name not in seen_names:
-                if verbose:
+        if tree is not None:
+            seen_names = set()
+            built = build_group_tree(tree, host_buckets, seen_names, verbose=verbose)
+            for group_name, hostnames in host_buckets.items():
+                if group_name not in seen_names:
                     print(
                         f"warning: role '{role}' has no group named '{group_name}' in "
-                        f"{group_structure_dir}/{role}.yml; dropping {sorted(hostnames)}"
+                        f"{group_structure_dir}/{role}.yml; dropping {sorted(hostnames)}",
+                        file=sys.stderr,
                     )
-        merge_children(children, built, role, sources, verbose=verbose)
+            merge_children(children, built, role, sources)
+        else:
+            for group_name, hostnames in host_buckets.items():
+                if group_name != role:
+                    print(
+                        f"warning: role '{role}' has no {group_structure_dir}/{role}.yml, so 'group: {group_name}' "
+                        f"is ignored for {sorted(hostnames)}; using flat group '{role}' instead",
+                        file=sys.stderr,
+                    )
+            all_hostnames = sorted({h for hostnames in host_buckets.values() for h in hostnames})
+            merge_children(children, {role: {"hosts": {h: None for h in all_hostnames}}}, role, sources)
 
     inventory = {"all": {"children": children}}
 
@@ -255,7 +272,7 @@ def main():
         "--repo-dir", default="repo",
         help="Directory containing per-branch checkouts, to copy each env's real group_vars/host_vars and read its group_structure/ from (default: %(default)s)",
     )
-    parser.add_argument("-v", "--verbose", action="store_true", help="Print each inventory file written, vars copied, and any warnings")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Print each inventory file written and vars copied (group_structure warnings always print, regardless of this flag)")
     args = parser.parse_args()
 
     generate_inventory(args.hosts_file, args.inventory_dir, args.repo_dir, verbose=args.verbose)
