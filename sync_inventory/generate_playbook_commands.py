@@ -13,7 +13,10 @@ for how nested groups, via group_structure/<role>.yml, let a role target
 several groups at once). Each script takes an optional first argument that
 adds `--limit <host>` on top of whatever the playbook already targets, e.g.
 `commands/<env>_<role>.sh some-host.example.com` runs just that host --
-this is what run-play's -H/--host uses under the hood.
+this is what run-play's -H/--host uses under the hood. The inventory file
+can likewise be overridden by exporting INVENTORY before running the
+script, e.g. `INVENTORY=other/hosts.yml commands/<env>_<role>.sh` -- this
+is what run-play's -i/--inventory uses under the hood.
 
 Each script is self-contained and safe to run directly (e.g. to debug one
 command by hand) -- its output goes straight to stdout/stderr, nothing is
@@ -53,7 +56,7 @@ def write_command_script(path, env_vars, inventory_path, playbook_path, verbose=
     lines = [
         "#!/bin/bash",
         *export_lines,
-        f"INVENTORY={inventory_path}",
+        f'INVENTORY="${{INVENTORY:-{inventory_path}}}"',
         f"PLAYBOOK={playbook_path}",
         "extra_args=()",
         'if [[ -n "$1" ]]; then',

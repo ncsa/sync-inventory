@@ -151,11 +151,19 @@ run-play --all
 Each run is logged to its own file under `logs/`, named after the script
 (e.g. `logs/pttran3_test_branch_proxmox.log`).
 
-Target a single host on top of whatever the playbook's own `hosts:` key
-already targets, e.g. to test one box before rolling out to the rest:
+Target a single host (or any Ansible `--limit` pattern — a group name, a
+`group1:group2` union, etc.) on top of whatever the playbook's own
+`hosts:` key already targets, e.g. to test one box before rolling out to
+the rest:
 
 ```bash
 run-play -s pttran3_test_branch_proxmox -H some-host.example.com
+```
+
+Override the inventory file the script uses (works with `-s` or `--all`):
+
+```bash
+run-play -s pttran3_test_branch_proxmox -i other/hosts.yml
 ```
 
 See what's available to run (the exact names `-s` accepts):
