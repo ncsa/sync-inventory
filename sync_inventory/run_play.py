@@ -14,26 +14,36 @@ which is passed through to the script and overrides its default --limit.
 Only valid with -s/--script -- not with --all, since that would run every
 script against that one host.
 
+The inventory file can be overridden with -i/--inventory, which sets
+INVENTORY in the script's environment -- each script only passes -i to
+ansible-playbook when INVENTORY is set, otherwise Ansible falls back to
+whatever the branch's own ansible.cfg declares. Valid with both -s/--script
+and --all.
+
 Usage:
     run-play -s pttran3_test_branch_proxmox
     run-play -s pttran3_test_branch_proxmox -H some-host.example.com
+    run-play -s pttran3_test_branch_proxmox -i other/hosts.yml
     run-play --all
     run-play --list
 """
 
 import argparse
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 
-def run_script(script, logs_dir, host=None, quiet=False, verbose=False):
+def run_script(script, logs_dir, host=None, inventory=None, quiet=False, verbose=False):
     log_file = logs_dir / f"{script.stem}.log"
     cmd = ["bash", str(script)] + ([host] if host else [])
+    env = {**os.environ, "INVENTORY": inventory} if inventory else None
     if verbose:
-        print(f"+ {' '.join(cmd)} (log: {log_file})")
+        prefix = f"INVENTORY={inventory} " if inventory else ""
+        print(f"+ {prefix}{' '.join(cmd)} (log: {log_file})")
     with open(log_file, "w") as f:
-        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)
         for line in process.stdout:
             f.write(line)
             if not quiet:
@@ -55,7 +65,7 @@ def list_commands(commands_dir="commands"):
         print(name)
 
 
-def run_play(script_name=None, run_all=False, commands_dir="commands", logs_dir="logs", host=None, quiet=False, verbose=False):
+def run_play(script_name=None, run_all=False, commands_dir="commands", logs_dir="logs", host=None, inventory=None, quiet=False, verbose=False):
     if run_all and host:
         raise SystemExit("-H/--host can only be used with -s/--script, not --all")
 
@@ -73,7 +83,7 @@ def run_play(script_name=None, run_all=False, commands_dir="commands", logs_dir=
             raise SystemExit(f"No command script found at {script}")
         scripts = [script]
 
-    failures = sum(not run_script(script, logs_dir, host=host, quiet=quiet, verbose=verbose) for script in scripts)
+    failures = sum(not run_script(script, logs_dir, host=host, inventory=inventory, quiet=quiet, verbose=verbose) for script in scripts)
     if failures:
         raise SystemExit(f"{failures} command(s) failed")
 
@@ -87,6 +97,7 @@ def main():
     parser.add_argument("--commands-dir", default="commands", help="Directory containing generated command scripts (default: %(default)s)")
     parser.add_argument("--logs-dir", default="logs", help="Directory to write each command's log file into (default: %(default)s)")
     parser.add_argument("-H", "--host", help="Limit the run to a single host instead of the script's whole group")
+    parser.add_argument("-i", "--inventory", help="Override the inventory file ansible-playbook uses, instead of falling back to the branch's own ansible.cfg")
     parser.add_argument("-q", "--quiet", action="store_true", help="Only log output to --logs-dir; don't also print it to stdout")
     parser.add_argument("-v", "--verbose", action="store_true", help="Print each command as it runs")
     args = parser.parse_args()
@@ -97,7 +108,7 @@ def main():
         list_commands(args.commands_dir)
         return
 
-    run_play(args.script, args.all, args.commands_dir, args.logs_dir, host=args.host, quiet=args.quiet, verbose=args.verbose)
+    run_play(args.script, args.all, args.commands_dir, args.logs_dir, host=args.host, inventory=args.inventory, quiet=args.quiet, verbose=args.verbose)
 
 
 if __name__ == "__main__":

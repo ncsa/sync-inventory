@@ -17,13 +17,13 @@ automatically:
 3. **Install each branch's dependencies** (roles and collections), so
    different branches can rely on different dependency versions without
    stepping on each other.
-4. **Build an Ansible inventory per environment**, complete with that
-   environment's own variables — so real settings actually apply, and two
-   environments with the same group name never share values by accident.
-5. **Generate the actual `ansible-playbook` commands** to run, one per
+4. **Generate the actual `ansible-playbook` commands** to run, one per
    environment/role, each fully self-contained (its own config, its own
    dependencies) so running several environments back to back never lets
-   one leak into another.
+   one leak into another. No inventory file is generated — each branch's
+   own `ansible.cfg` is expected to declare its own inventory, the same as
+   it would for a human running `ansible-playbook` by hand from that
+   checkout.
 
 The end result sitting in the project directory: a `commands/` folder with
 one ready-to-run script per environment/role (e.g.
@@ -51,8 +51,8 @@ source .venv/bin/activate
 pip install -e .
 ```
 
-This installs eight commands into your virtualenv: `sync-inventory`,
-`fetch-meta`, `pull-repo`, `install-requirements`, `generate-inventory`,
+This installs seven commands into your virtualenv: `sync-inventory`,
+`fetch-meta`, `pull-repo`, `install-requirements`,
 `generate-playbook-commands`, `run-play`, and `list-vms`.
 
 ### Configuration
@@ -80,8 +80,8 @@ export REPO_URL=git@example.com:org/ansible-playbooks.git
 ## Quick guide
 
 Run the whole pipeline (fetch metadata, mirror branches, regenerate
-inventories and commands). `-u/--repo-url` (or `REPO_URL` in the
-environment) is required — there's no default:
+commands). `-u/--repo-url` (or `REPO_URL` in the environment) is required
+— there's no default:
 
 ```bash
 sync-inventory -u git@example.com:org/ansible-playbooks.git
@@ -100,11 +100,18 @@ run-play --all
 Each run is logged to its own file under `logs/`, named after the script
 (e.g. `logs/pttran3_test_branch_proxmox.log`).
 
-Target a single host instead of the script's whole group, e.g. to test one
-box before rolling out to the rest:
+Target a single host on top of whatever the playbook's own `hosts:` key
+already targets, e.g. to test one box before rolling out to the rest:
 
 ```bash
 run-play -s pttran3_test_branch_proxmox -H some-host.example.com
+```
+
+Override the inventory file instead of relying on the branch's own
+`ansible.cfg` (works with `-s` or `--all`):
+
+```bash
+run-play -s pttran3_test_branch_proxmox -i other/hosts.yml
 ```
 
 See what's available to run (the exact names `-s` accepts):
@@ -154,7 +161,6 @@ Run an individual step on its own (each accepts `--help` for its own flags):
 fetch-meta
 pull-repo git@example.com:org/ansible-playbooks.git
 install-requirements
-generate-inventory
 generate-playbook-commands
 run-play -s pttran3_test_branch_proxmox
 ```
