@@ -32,12 +32,22 @@ only generates these; running one (or all of them) is a separate step, with
 `run-play` (see [Quick guide](#quick-guide) below).
 
 It's built to keep working even when something's incomplete or unreachable.
-A host pointed at a branch that doesn't exist, or a role with no matching
-playbook, gets skipped and reported rather than stopping everything else.
-Losing the connection to NetBox or the git remote just means it falls back
-to whatever it already had, rather than failing outright. All of this
-reporting is quiet by default — pass `-v`/`--verbose` (on `sync-inventory`
-or any individual command) when you want to see it.
+An env pointed at a branch that isn't checked out, or a role with no
+matching playbook, gets skipped and reported rather than stopping
+everything else. Losing the connection to NetBox or the git remote just
+means it falls back to whatever it already had, rather than failing
+outright. Warnings and errors always print to stderr, regardless of
+`-v`/`--verbose` — that flag only adds routine progress output on top.
+
+Skipping happens per **env** or per **(env, role)**, never per individual
+host — no inventory file is generated anymore (see below), so individual
+hostnames in `hosts.json` aren't used to decide anything; they only
+determine which `(env, role)` combinations need a script. Concretely: if
+an env's branch isn't checked out under `repo/`, every role/host assigned
+to that env is skipped. If a role has no matching playbook in that branch,
+just that role is skipped, but for every host that shares it in that env —
+there's no way to skip one specific host while keeping others in the same
+`(env, role)` pair generating a script.
 
 ## Install
 
@@ -134,8 +144,8 @@ Point it at a different playbook repo, or override other non-default paths
 sync-inventory --repo-url git@example.com:org/other-repo.git --commands-dir ~/generated-commands
 ```
 
-See routine progress and every warning/error as it happens (quiet by
-default otherwise):
+See routine progress too, on top of the warnings/errors that always print
+(quiet by default otherwise):
 
 ```bash
 sync-inventory -u git@example.com:org/ansible-playbooks.git -v

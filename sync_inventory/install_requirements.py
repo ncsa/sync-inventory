@@ -11,11 +11,16 @@ via a `.installed` marker file), not on every run.
 generate-playbook-commands points ANSIBLE_ROLES_PATH/ANSIBLE_COLLECTIONS_PATH
 at these same directories for that branch's generated commands, so installed
 dependencies are actually found at playbook-run time.
+
+If ansible-galaxy fails for a branch, the failure (including its actual
+output) is printed to stderr -- always, regardless of --verbose -- and
+that branch is skipped rather than aborting the rest of the run.
 """
 
 import argparse
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -31,6 +36,21 @@ def requirements_files(repo_dir):
 
 def needs_install(req_file, marker):
     return not marker.is_file() or req_file.stat().st_mtime > marker.stat().st_mtime
+
+
+def run_galaxy(cmd, env, verbose=False):
+    if verbose:
+        print(f"$ {' '.join(cmd)}", flush=True)
+    try:
+        subprocess.run(cmd, check=True, env=env, capture_output=not verbose, text=True)
+    except subprocess.CalledProcessError as e:
+        print(f"error: `{' '.join(cmd)}` failed (exit {e.returncode})", file=sys.stderr)
+        if e.stdout:
+            print(e.stdout.rstrip(), file=sys.stderr)
+        if e.stderr:
+            print(e.stderr.rstrip(), file=sys.stderr)
+        return False
+    return True
 
 
 def install_requirements(repo_dir="repo", verbose=False):
@@ -56,13 +76,10 @@ def install_requirements(repo_dir="repo", verbose=False):
             "ANSIBLE_COLLECTIONS_PATH": str(collections_path),
         }
 
-        if verbose:
-            print(f"$ {' '.join(role_cmd)}", flush=True)
-        subprocess.run(role_cmd, check=True, env=env, capture_output=not verbose)
-
-        if verbose:
-            print(f"$ {' '.join(collection_cmd)}", flush=True)
-        subprocess.run(collection_cmd, check=True, env=env, capture_output=not verbose)
+        if not run_galaxy(role_cmd, env, verbose=verbose):
+            continue
+        if not run_galaxy(collection_cmd, env, verbose=verbose):
+            continue
 
         marker.touch()
         if verbose:
@@ -75,7 +92,7 @@ def main():
         "--repo-dir", default="repo",
         help="Directory containing per-branch checkouts (default: %(default)s)",
     )
-    parser.add_argument("-v", "--verbose", action="store_true", help="Print install progress")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Print install progress (failures always print, regardless of this flag)")
     args = parser.parse_args()
 
     install_requirements(args.repo_dir, verbose=args.verbose)

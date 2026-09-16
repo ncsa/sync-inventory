@@ -23,7 +23,9 @@ Steps:
 
 A failure in step 1, 2, or 3 (e.g. NetBox/network unreachable) does not
 block the rest, since step 4 just needs whatever hosts file, repo
-checkouts, and installed dependencies already exist on disk.
+checkouts, and installed dependencies already exist on disk. Each such
+failure is reported to stderr as "WARNING: <step> failed (...)" -- always,
+regardless of --verbose.
 
 This command only regenerates commands/; it never runs them. Use run-play
 to actually execute a generated script (or all of them).
@@ -31,8 +33,8 @@ to actually execute a generated script (or all of them).
 -u/--repo-url can also be set via the REPO_URL environment variable,
 same as NETBOX_URL/NETBOX_TOKEN/NETBOX_OWNERS are for fetch-meta.
 
-Quiet by default: routine progress and warning/error messages are only
-printed with --verbose.
+Quiet by default: routine progress is only printed with --verbose.
+Warnings and errors always print, regardless of --verbose.
 
 Refuses to run if another instance is already in progress (lock:
 .sync_inventory.lock in the current directory) regardless of verbosity.
@@ -40,6 +42,7 @@ Refuses to run if another instance is already in progress (lock:
 
 import argparse
 import os
+import sys
 from pathlib import Path
 
 from sync_inventory.fetch_meta import fetch_meta
@@ -70,7 +73,7 @@ def main():
     )
     parser.add_argument(
         "-v", "--verbose", action="store_true",
-        help="Print routine progress plus warning/error messages (quiet by default)",
+        help="Print routine progress (quiet by default); warnings and errors always print",
     )
     args = parser.parse_args()
     if not args.repo_url:
@@ -94,22 +97,19 @@ def main():
             try:
                 fetch_meta(args.hosts_file, verbose=args.verbose)
             except Exception as e:
-                if args.verbose:
-                    print(f"WARNING: fetch-meta failed ({e}); continuing with existing {args.hosts_file}")
+                print(f"WARNING: fetch-meta failed ({e}); continuing with existing {args.hosts_file}", file=sys.stderr)
 
         section("pull-repo", args.verbose)
         try:
             pull_repo(args.repo_url, args.repo_dir, verbose=args.verbose)
         except Exception as e:
-            if args.verbose:
-                print(f"WARNING: pull-repo failed ({e}); continuing with existing {args.repo_dir}/ state")
+            print(f"WARNING: pull-repo failed ({e}); continuing with existing {args.repo_dir}/ state", file=sys.stderr)
 
         section("install-requirements", args.verbose)
         try:
             install_requirements(args.repo_dir, verbose=args.verbose)
         except Exception as e:
-            if args.verbose:
-                print(f"WARNING: install-requirements failed ({e}); continuing with existing {args.repo_dir}/ dependencies")
+            print(f"WARNING: install-requirements failed ({e}); continuing with existing {args.repo_dir}/ dependencies", file=sys.stderr)
 
         section("generate-playbook-commands", args.verbose)
         generate_playbook_commands(args.hosts_file, args.repo_dir, args.commands_dir, verbose=args.verbose)

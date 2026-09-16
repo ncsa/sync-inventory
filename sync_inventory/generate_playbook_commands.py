@@ -30,7 +30,8 @@ script in --commands-dir and handles logging/failure-tracking itself.
 If a branch isn't checked out under repo/, an error is reported for that env
 and its commands are skipped. A role whose playbook file doesn't actually
 exist in that branch's checkout is reported as a warning and skipped (the
-netbox data only records intent, not what playbooks actually exist).
+netbox data only records intent, not what playbooks actually exist). Both
+of these print to stderr always, regardless of --verbose.
 
 If that branch has its own ansible.cfg, ANSIBLE_CONFIG is set to it for that
 command (Ansible only auto-discovers ansible.cfg via the current directory,
@@ -48,36 +49,36 @@ import argparse
 import json
 import shutil
 import stat
+import sys
 from collections import defaultdict
 from pathlib import Path
 
 from sync_inventory.naming import sanitize_dir_name
 
 
-def load_hosts(hosts_file, verbose=False):
+def load_hosts(hosts_file):
     try:
         with open(hosts_file) as f:
             return json.load(f)
     except FileNotFoundError:
-        if verbose:
-            print(f"warning: hosts file '{hosts_file}' not found; treating as empty")
+        print(f"warning: hosts file '{hosts_file}' not found; treating as empty", file=sys.stderr)
         return {}
 
 
-def sanitize_env_name(env, verbose=False):
+def sanitize_env_name(env):
     """Match pull-repo's branch-directory sanitization, so repo/<branch>/
     refers to the same branch for a feature branch like
     "pttran3/SVCPLAN-1234/test"."""
     sanitized = sanitize_dir_name(env)
-    if sanitized != env and verbose:
-        print(f"warning: env '{env}' has invalid directory characters; using '{sanitized}' instead")
+    if sanitized != env:
+        print(f"warning: env '{env}' has invalid directory characters; using '{sanitized}' instead", file=sys.stderr)
     return sanitized
 
 
-def group_by_env(hosts, verbose=False):
+def group_by_env(hosts):
     envs = defaultdict(lambda: defaultdict(list))
     for hostname, meta in hosts.items():
-        env = sanitize_env_name(meta["env"], verbose=verbose)
+        env = sanitize_env_name(meta["env"])
         envs[env][meta["role"]].append(hostname)
     return envs
 
@@ -111,15 +112,14 @@ def generate_playbook_commands(hosts_file="hosts.json", repo_dir="repo", command
         shutil.rmtree(commands_dir)
     commands_dir.mkdir(parents=True, exist_ok=True)
 
-    hosts = load_hosts(hosts_file, verbose=verbose)
-    envs = group_by_env(hosts, verbose=verbose)
+    hosts = load_hosts(hosts_file)
+    envs = group_by_env(hosts)
 
     for branch, roles in sorted(envs.items()):
         branch_dir = repo_dir / branch
 
         if not branch_dir.is_dir():
-            if verbose:
-                print(f"ERROR: branch '{branch}' not found under {repo_dir} (expected {branch_dir})")
+            print(f"ERROR: branch '{branch}' not found under {repo_dir} (expected {branch_dir})", file=sys.stderr)
             continue
 
         env_vars = {}
@@ -136,8 +136,7 @@ def generate_playbook_commands(hosts_file="hosts.json", repo_dir="repo", command
         for role in sorted(roles):
             playbook_path = branch_dir / "playbooks" / f"{role}.yml"
             if not playbook_path.is_file():
-                if verbose:
-                    print(f"WARNING: role '{role}' has no playbook at {playbook_path}; skipping")
+                print(f"WARNING: role '{role}' has no playbook at {playbook_path}; skipping", file=sys.stderr)
                 continue
             script_path = commands_dir / f"{branch}_{role}.sh"
             write_command_script(script_path, env_vars, playbook_path, verbose=verbose)
@@ -157,7 +156,7 @@ def main():
         "--commands-dir", default="commands",
         help="Directory to write one script per ansible-playbook command into (default: %(default)s)",
     )
-    parser.add_argument("-v", "--verbose", action="store_true", help="Print branch/role warnings and errors, and each script written")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Print each script written (branch/role warnings and errors always print, regardless of this flag)")
     args = parser.parse_args()
 
     generate_playbook_commands(args.hosts_file, args.repo_dir, args.commands_dir, verbose=args.verbose)
