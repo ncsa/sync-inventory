@@ -8,10 +8,10 @@ hostname -> {"env": ..., "role": ...}, in the same shape generate-inventory
 expects.
 
 Only entries with role/env actually set are included; entries missing
-either are reported as a warning (always printed, regardless of --verbose)
-and skipped rather than silently dropped. By default, entries where
-nbmeta's "ansible" flag is explicitly false are excluded too, since those
-hosts are marked as not managed by this Ansible controller.
+either are reported as a warning (only with --verbose) and skipped rather
+than silently dropped. By default, entries where nbmeta's "ansible" flag
+is explicitly false are excluded too, since those hosts are marked as not
+managed by this Ansible controller.
 
 Configuration is read from the environment, same as nbmeta:
     NETBOX_URL     - NetBox instance URL
@@ -78,12 +78,14 @@ def fetch_hosts(nb, owner_ids, ansible_only=True, verbose=False):
     hosts = {}
     for ip in nb.ipam.ip_addresses.filter(owner_id=owner_ids):
         if not ip.dns_name:
-            print(f"warning: skipping {ip.address}, no dns_name set", file=sys.stderr)
+            if verbose:
+                print(f"warning: skipping {ip.address}, no dns_name set", file=sys.stderr)
             continue
 
         meta = split_leading_json(ip.description or "")
         if "role" not in meta or "env" not in meta:
-            print(f"warning: skipping {ip.dns_name} ({ip.address}), missing role/env in description", file=sys.stderr)
+            if verbose:
+                print(f"warning: skipping {ip.dns_name} ({ip.address}), missing role/env in description", file=sys.stderr)
             continue
 
         if ansible_only and not meta.get("ansible", True):
@@ -134,7 +136,7 @@ def main():
         "--include-non-ansible", action="store_true",
         help="Also include hosts where nbmeta's ansible flag is false (default: only ansible=true hosts)",
     )
-    parser.add_argument("-v", "--verbose", action="store_true", help="Print the final Wrote message (per-host and config warnings always print)")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Print per-host warnings and the final Wrote message")
     args = parser.parse_args()
 
     try:

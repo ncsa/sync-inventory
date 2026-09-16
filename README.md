@@ -36,8 +36,11 @@ An env pointed at a branch that isn't checked out, or a role with no
 matching playbook, gets skipped and reported rather than stopping
 everything else. Losing the connection to NetBox or the git remote just
 means it falls back to whatever it already had, rather than failing
-outright. Warnings and errors always print to stderr, regardless of
-`-v`/`--verbose` — that flag only adds routine progress output on top.
+outright. Most warnings and errors always print to stderr, regardless of
+`-v`/`--verbose` — that flag mainly adds routine progress output on top,
+with one exception: `fetch-meta`'s per-host warnings (a NetBox entry with
+no `dns_name`, or missing `role`/`env`) are noisy at NetBox-fleet scale, so
+those stay `-v`-gated like routine progress does.
 
 Skipping happens per **env** or per **(env, role)**, never per individual
 host — no inventory file is generated anymore (see below), so individual
