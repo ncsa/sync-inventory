@@ -27,11 +27,13 @@ command by hand) -- its output goes straight to stdout/stderr, nothing is
 redirected to a log file by the script itself. run-play runs one or every
 script in --commands-dir and handles logging/failure-tracking itself.
 
-If a branch isn't checked out under repo/, an error is reported for that env
-and its commands are skipped. A role whose playbook file doesn't actually
-exist in that branch's checkout is reported as a warning and skipped (the
-netbox data only records intent, not what playbooks actually exist). Both
-of these print to stderr always, regardless of --verbose.
+If a branch isn't checked out under repo/, that's a WARNING: that env is
+skipped (stated in the message) and the run continues with the rest. A
+role whose playbook file doesn't actually exist in that branch's checkout
+is likewise a WARNING and is skipped (the netbox data only records intent,
+not what playbooks actually exist). Both print to stderr always, regardless
+of --verbose, since nothing here ever aborts generate-playbook-commands
+itself -- there's no ERROR-level condition in this command.
 
 If that branch has its own ansible.cfg, ANSIBLE_CONFIG is set to it for that
 command (Ansible only auto-discovers ansible.cfg via the current directory,
@@ -61,7 +63,7 @@ def load_hosts(hosts_file):
         with open(hosts_file) as f:
             return json.load(f)
     except FileNotFoundError:
-        print(f"warning: hosts file '{hosts_file}' not found; treating as empty", file=sys.stderr)
+        print(f"WARNING: hosts file '{hosts_file}' not found; treating as empty", file=sys.stderr)
         return {}
 
 
@@ -71,7 +73,7 @@ def sanitize_env_name(env):
     "pttran3/SVCPLAN-1234/test"."""
     sanitized = sanitize_dir_name(env)
     if sanitized != env:
-        print(f"warning: env '{env}' has invalid directory characters; using '{sanitized}' instead", file=sys.stderr)
+        print(f"WARNING: env '{env}' has invalid directory characters; using '{sanitized}' instead", file=sys.stderr)
     return sanitized
 
 
@@ -119,7 +121,7 @@ def generate_playbook_commands(hosts_file="hosts.json", repo_dir="repo", command
         branch_dir = repo_dir / branch
 
         if not branch_dir.is_dir():
-            print(f"ERROR: branch '{branch}' not found under {repo_dir} (expected {branch_dir})", file=sys.stderr)
+            print(f"WARNING: branch '{branch}' not found under {repo_dir} (expected {branch_dir}); skipping this env", file=sys.stderr)
             continue
 
         env_vars = {}
@@ -156,7 +158,7 @@ def main():
         "--commands-dir", default="commands",
         help="Directory to write one script per ansible-playbook command into (default: %(default)s)",
     )
-    parser.add_argument("-v", "--verbose", action="store_true", help="Print each script written (branch/role warnings and errors always print, regardless of this flag)")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Print each script written (branch/role warnings always print, regardless of this flag)")
     args = parser.parse_args()
 
     generate_playbook_commands(args.hosts_file, args.repo_dir, args.commands_dir, verbose=args.verbose)

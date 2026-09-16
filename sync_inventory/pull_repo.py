@@ -17,8 +17,11 @@ Quiet by default; pass --verbose to see one line per branch ("No update to
 repo/<branch>", "Updated repo/<branch>", or "Cloned repo/<branch>"). Git's
 own (much noisier) output is never shown, except when a branch's update or
 clone fails, where it's printed as-is to stderr -- always, regardless of
---verbose -- so the actual error is visible. A branch that fails is
-skipped rather than aborting the rest of the run.
+--verbose -- so the actual error is visible. A branch that fails to update
+or clone is a WARNING: it's skipped (the action taken is stated in the
+message) rather than aborting the rest of the run. Not being able to list
+branches at all (e.g. the repo URL is unreachable) is an ERROR: nothing
+else can proceed without a branch list, so pull-repo aborts.
 
 Usage:
     pull-repo <repo_url> [-r REPO_DIR] [-v]
@@ -52,8 +55,8 @@ def run(cmd, verbose=False):
     raise subprocess.CalledProcessError(result.returncode, cmd, output=result.stdout, stderr=result.stderr)
 
 
-def print_git_error(action, e):
-    print(f"ERROR: {action} failed: `{' '.join(e.cmd)}` (exit {e.returncode})", file=sys.stderr)
+def print_git_error(label, action, e, next_step):
+    print(f"{label}: {action} failed: `{' '.join(e.cmd)}` (exit {e.returncode}); {next_step}", file=sys.stderr)
     if e.stdout:
         print(e.stdout.rstrip(), file=sys.stderr)
     if e.stderr:
@@ -81,7 +84,7 @@ def sync_branch(repo_url, branch, branch_dir, verbose=False):
             run(["git", "-C", str(branch_dir), "reset", "--hard", "FETCH_HEAD"], verbose=verbose)
             run(["git", "-C", str(branch_dir), "clean", "-fd"], verbose=verbose)
         except subprocess.CalledProcessError as e:
-            print_git_error(f"updating {branch_dir}", e)
+            print_git_error("WARNING", f"updating {branch_dir}", e, "skipping this branch")
             return
         if verbose:
             print(f"{'No update to' if before == after else 'Updated'} {branch_dir}")
@@ -89,7 +92,7 @@ def sync_branch(repo_url, branch, branch_dir, verbose=False):
         try:
             run(["git", "clone", "--branch", branch, "--single-branch", repo_url, str(branch_dir)], verbose=verbose)
         except subprocess.CalledProcessError as e:
-            print_git_error(f"cloning {branch_dir}", e)
+            print_git_error("WARNING", f"cloning {branch_dir}", e, "skipping this branch")
             return
         if verbose:
             print(f"Cloned {branch_dir}")
@@ -102,7 +105,7 @@ def pull_repo(repo_url, repo_dir="repo", verbose=False):
     try:
         branches = list_remote_branches(repo_url, verbose=verbose)
     except subprocess.CalledProcessError as e:
-        print_git_error(f"listing branches in {repo_url}", e)
+        print_git_error("ERROR", f"listing branches in {repo_url}", e, "aborting")
         raise PullRepoError(f"Could not list branches in {repo_url}")
     if not branches:
         raise PullRepoError(f"No branches found in {repo_url}")
@@ -125,7 +128,7 @@ def main():
     try:
         pull_repo(args.repo_url, args.repo_dir, verbose=args.verbose)
     except PullRepoError as exc:
-        raise SystemExit(f"error: {exc}")
+        raise SystemExit(f"ERROR: {exc}")
 
 
 if __name__ == "__main__":

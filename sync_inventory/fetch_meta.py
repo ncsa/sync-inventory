@@ -79,13 +79,13 @@ def fetch_hosts(nb, owner_ids, ansible_only=True, verbose=False):
     for ip in nb.ipam.ip_addresses.filter(owner_id=owner_ids):
         if not ip.dns_name:
             if verbose:
-                print(f"warning: skipping {ip.address}, no dns_name set", file=sys.stderr)
+                print(f"WARNING: {ip.address} has no dns_name set; skipping this entry", file=sys.stderr)
             continue
 
         meta = split_leading_json(ip.description or "")
         if "role" not in meta or "env" not in meta:
             if verbose:
-                print(f"warning: skipping {ip.dns_name} ({ip.address}), missing role/env in description", file=sys.stderr)
+                print(f"WARNING: {ip.dns_name} ({ip.address}) is missing role/env in its description; skipping this entry", file=sys.stderr)
             continue
 
         if ansible_only and not meta.get("ansible", True):
@@ -110,13 +110,13 @@ def fetch_meta(hosts_file="hosts.json", ansible_only=True, verbose=False):
     owner_names = get_owner_names()
     owner_ids, unresolved = resolve_owner_ids(nb, owner_names)
     if unresolved:
-        print(f"warning: NETBOX_OWNERS not found in NetBox, ignoring: {unresolved}", file=sys.stderr)
+        print(f"WARNING: {unresolved} not found in NetBox; ignoring and continuing with the rest of NETBOX_OWNERS", file=sys.stderr)
 
     hosts = fetch_hosts(nb, owner_ids, ansible_only=ansible_only, verbose=verbose)
     if not hosts:
         print(
-            "warning: no matching hosts found (check NETBOX_OWNERS, and that entries have "
-            "role/env set via nbmeta)",
+            f"WARNING: no matching hosts found (check NETBOX_OWNERS, and that entries have "
+            f"role/env set via nbmeta); writing an empty {hosts_file}",
             file=sys.stderr,
         )
 
@@ -142,7 +142,7 @@ def main():
     try:
         fetch_meta(args.hosts_file, ansible_only=not args.include_non_ansible, verbose=args.verbose)
     except NetBoxConfigError as exc:
-        raise SystemExit(f"error: {exc}")
+        raise SystemExit(f"ERROR: {exc}")
 
 
 if __name__ == "__main__":

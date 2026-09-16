@@ -21,11 +21,13 @@ Steps:
      own inventory, the same as it would for a human running ansible-playbook
      by hand from that checkout.
 
-A failure in step 1, 2, or 3 (e.g. NetBox/network unreachable) does not
-block the rest, since step 4 just needs whatever hosts file, repo
-checkouts, and installed dependencies already exist on disk. Each such
-failure is reported to stderr as "WARNING: <step> failed (...)" -- always,
-regardless of --verbose.
+A failure in step 1, 2, or 3 (e.g. NetBox/network unreachable) is a
+WARNING, not an ERROR: it does not block the rest, since step 4 just needs
+whatever hosts file, repo checkouts, and installed dependencies already
+exist on disk. Each such failure is reported to stderr as "WARNING: <step>
+failed (...); continuing with <what it falls back to>" -- always,
+regardless of --verbose. The only ERROR in this command is the lock check
+below, which does stop sync-inventory immediately.
 
 This command only regenerates commands/; it never runs them. Use run-play
 to actually execute a generated script (or all of them).
@@ -34,7 +36,9 @@ to actually execute a generated script (or all of them).
 same as NETBOX_URL/NETBOX_TOKEN/NETBOX_OWNERS are for fetch-meta.
 
 Quiet by default: routine progress is only printed with --verbose.
-Warnings and errors always print, regardless of --verbose.
+Warnings and errors always print, regardless of --verbose. ERROR means
+sync-inventory quits immediately; WARNING means it acknowledges the issue,
+states what it's doing about it, and keeps going.
 
 Refuses to run if another instance is already in progress (lock:
 .sync_inventory.lock in the current directory) regardless of verbosity.
@@ -83,7 +87,7 @@ def main():
         LOCK_DIR.mkdir()
     except FileExistsError:
         raise SystemExit(
-            f"Another sync-inventory is already in progress (lock: {LOCK_DIR}). Exiting.\n"
+            f"ERROR: another sync-inventory is already in progress (lock: {LOCK_DIR}); exiting.\n"
             f"If no other run is actually in progress (e.g. a previous run was killed), "
             f"remove the stale lock with: rmdir {LOCK_DIR}"
         )

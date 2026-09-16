@@ -20,6 +20,13 @@ ansible-playbook when INVENTORY is set, otherwise Ansible falls back to
 whatever the branch's own ansible.cfg declares. Valid with both -s/--script
 and --all.
 
+One script failing is a WARNING: it's recorded as failed (stated in the
+message) and the rest of the run continues to the next script. Only once
+every script has been attempted does run-play quit -- with an ERROR
+summarizing how many failed. Anything that stops run-play before it even
+starts running scripts (a bad flag combination, no matching script found)
+is likewise an ERROR.
+
 Usage:
     run-play -s pttran3_test_branch_proxmox
     run-play -s pttran3_test_branch_proxmox -H some-host.example.com
@@ -50,7 +57,7 @@ def run_script(script, logs_dir, host=None, inventory=None, quiet=False, verbose
                 sys.stdout.write(line)
         returncode = process.wait()
     if returncode != 0:
-        print(f"FAILED: {' '.join(cmd)} (see {log_file})", file=sys.stderr)
+        print(f"WARNING: {' '.join(cmd)} failed (see {log_file}); marking it failed and continuing", file=sys.stderr)
         return False
     return True
 
@@ -67,7 +74,7 @@ def list_commands(commands_dir="commands"):
 
 def run_play(script_name=None, run_all=False, commands_dir="commands", logs_dir="logs", host=None, inventory=None, quiet=False, verbose=False):
     if run_all and host:
-        raise SystemExit("-H/--host can only be used with -s/--script, not --all")
+        raise SystemExit("ERROR: -H/--host can only be used with -s/--script, not --all")
 
     commands_dir = Path(commands_dir)
     logs_dir = Path(logs_dir)
@@ -76,16 +83,16 @@ def run_play(script_name=None, run_all=False, commands_dir="commands", logs_dir=
     if run_all:
         scripts = sorted(commands_dir.glob("*.sh"))
         if not scripts:
-            raise SystemExit(f"No command scripts found under {commands_dir}")
+            raise SystemExit(f"ERROR: no command scripts found under {commands_dir}")
     else:
         script = commands_dir / f"{script_name}.sh"
         if not script.is_file():
-            raise SystemExit(f"No command script found at {script}")
+            raise SystemExit(f"ERROR: no command script found at {script}")
         scripts = [script]
 
     failures = sum(not run_script(script, logs_dir, host=host, inventory=inventory, quiet=quiet, verbose=verbose) for script in scripts)
     if failures:
-        raise SystemExit(f"{failures} command(s) failed")
+        raise SystemExit(f"ERROR: {failures} command(s) failed")
 
 
 def main():

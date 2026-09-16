@@ -12,9 +12,10 @@ generate-playbook-commands points ANSIBLE_ROLES_PATH/ANSIBLE_COLLECTIONS_PATH
 at these same directories for that branch's generated commands, so installed
 dependencies are actually found at playbook-run time.
 
-If ansible-galaxy fails for a branch, the failure (including its actual
-output) is printed to stderr -- always, regardless of --verbose -- and
-that branch is skipped rather than aborting the rest of the run.
+If ansible-galaxy fails for a branch, that's a WARNING: the failure
+(including its actual output) is printed to stderr -- always, regardless
+of --verbose -- that branch's install is skipped (stated in the message),
+and the run continues with the remaining branches rather than aborting.
 """
 
 import argparse
@@ -44,7 +45,7 @@ def run_galaxy(cmd, env, verbose=False):
     try:
         subprocess.run(cmd, check=True, env=env, capture_output=not verbose, text=True)
     except subprocess.CalledProcessError as e:
-        print(f"error: `{' '.join(cmd)}` failed (exit {e.returncode})", file=sys.stderr)
+        print(f"WARNING: `{' '.join(cmd)}` failed (exit {e.returncode}); skipping this branch's install", file=sys.stderr)
         if e.stdout:
             print(e.stdout.rstrip(), file=sys.stderr)
         if e.stderr:
