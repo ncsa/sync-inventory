@@ -1,66 +1,112 @@
 #!/usr/bin/env python3
-"""Generate one ansible-playbook command script per group in each env inventory.
+"""Generate one ansible-playbook command script per role assigned to each env.
 
-Each subdirectory of --inventory-dir is named after an env, which is
-expected to match a branch checked out under repo/ (see pull-repo). For
-each group (role name) found in that env's inventory/<env>/hosts.yml, write
-an executable script at commands/<env>_<group>.sh that runs the matching
-playbook from that branch's checkout, limited to that group by default:
+For every env with hosts in --hosts-file, and every role assigned to that
+env, write an executable script at commands/<env>_<role>.sh that runs the
+matching playbook from that branch's checkout:
 
-    ansible-playbook -i inventory/<env>/hosts.yml --limit <group> repo/<env>/playbooks/<group>.yml
+    ansible-playbook repo/<env>/playbooks/<role>.yml
 
-Each script takes an optional first argument overriding what --limit is
-passed, e.g. `commands/<env>_<group>.sh some-host.example.com` runs just
-that host instead of the whole group -- this is what run-play's -H/--host
-uses under the hood.
+No --limit is passed by default -- the playbook's own `hosts:` key decides
+which host(s)/group(s) it targets, the same way it would if a human ran
+ansible-playbook by hand. Each script takes an optional first argument that
+adds `--limit <host-or-group>` on top of whatever the playbook already
+targets, e.g. `commands/<env>_<role>.sh some-host.example.com` narrows the
+run to just that host -- this is what run-play's -H/--host uses under the
+hood.
+
+No -i/--inventory is passed by default either -- each branch's own
+ansible.cfg (see below) already declares its own inventory file, so
+Ansible finds it on its own. It can still be overridden by exporting
+INVENTORY before running the script, e.g.
+`INVENTORY=other/hosts.yml commands/<env>_<role>.sh` -- this is what
+run-play's -i/--inventory uses under the hood.
 
 Each script is self-contained and safe to run directly (e.g. to debug one
 command by hand) -- its output goes straight to stdout/stderr, nothing is
 redirected to a log file by the script itself. run-play runs one or every
 script in --commands-dir and handles logging/failure-tracking itself.
 
-If a branch isn't checked out under repo/, an error is reported for that env
-and its commands are skipped. Groups whose playbook file doesn't actually
-exist in that branch's checkout are reported as a warning and skipped (the
-netbox data only records intent, not what playbooks actually exist).
+If a branch isn't checked out under repo/, that's a WARNING: that env is
+skipped (stated in the message) and the run continues with the rest. A
+role whose playbook file doesn't actually exist in that branch's checkout
+is likewise a WARNING and is skipped (the netbox data only records intent,
+not what playbooks actually exist). Both print to stderr always, regardless
+of --verbose, since nothing here ever aborts generate-playbook-commands
+itself -- there's no ERROR-level condition in this command.
 
 If that branch has its own ansible.cfg, ANSIBLE_CONFIG is set to it for that
 command (Ansible only auto-discovers ansible.cfg via the current directory,
 not the playbook's path, so without this the branch's own config -- vault
-password file, remote_user, etc. -- would otherwise be silently ignored).
-If install-requirements has installed that branch's roles/collections into
-<branch>/.ansible/{roles,collections}, ANSIBLE_ROLES_PATH and
-ANSIBLE_COLLECTIONS_PATH are set to them too.
+password file, remote_user, inventory, etc. -- would otherwise be silently
+ignored). If install-requirements has installed that branch's
+roles/collections into <branch>/.ansible/{roles,collections},
+ANSIBLE_ROLES_PATH and ANSIBLE_COLLECTIONS_PATH are set to them too.
 
-Every run first removes any existing scripts in --commands-dir, so a group
+Every run first removes any existing scripts in --commands-dir, so a role
 that no longer applies doesn't leave a stale script behind.
 """
 
 import argparse
+import json
 import shutil
 import stat
+import sys
+from collections import defaultdict
 from pathlib import Path
 
-import yaml
+from sync_inventory.naming import sanitize_dir_name
 
 
-def groups_in_inventory(inventory_path):
-    with open(inventory_path) as f:
-        inventory = yaml.safe_load(f)
-    return list(inventory["all"]["children"].keys())
+def load_hosts(hosts_file):
+    try:
+        with open(hosts_file) as f:
+            return json.load(f)
+    except FileNotFoundError:
+        print(f"WARNING: hosts file '{hosts_file}' not found; treating as empty", file=sys.stderr)
+        return {}
 
 
-def write_command_script(path, env_vars, ansible_cmd, verbose=False):
+def sanitize_env_name(env):
+    """Match pull-repo's branch-directory sanitization, so repo/<branch>/
+    refers to the same branch for a feature branch like
+    "pttran3/SVCPLAN-1234/test"."""
+    sanitized = sanitize_dir_name(env)
+    if sanitized != env:
+        print(f"WARNING: env '{env}' has invalid directory characters; using '{sanitized}' instead", file=sys.stderr)
+    return sanitized
+
+
+def group_by_env(hosts):
+    envs = defaultdict(lambda: defaultdict(list))
+    for hostname, meta in hosts.items():
+        env = sanitize_env_name(meta["env"])
+        envs[env][meta["role"]].append(hostname)
+    return envs
+
+
+def write_command_script(path, env_vars, playbook_path, verbose=False):
     export_lines = [f"export {key}={value}" for key, value in env_vars.items()]
-    lines = ["#!/bin/bash", *export_lines, ansible_cmd, ""]
+    lines = [
+        "#!/bin/bash",
+        *export_lines,
+        "extra_args=()",
+        'if [[ -n "$1" ]]; then',
+        '  extra_args+=(--limit "$1")',
+        "fi",
+        'if [[ -n "$INVENTORY" ]]; then',
+        '  extra_args+=(-i "$INVENTORY")',
+        "fi",
+        f'ansible-playbook "${{extra_args[@]}}" {playbook_path}',
+        "",
+    ]
     path.write_text("\n".join(lines))
     path.chmod(path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
     if verbose:
         print(f"Wrote {path}")
 
 
-def generate_playbook_commands(inventory_dir="inventory", repo_dir="repo", commands_dir="commands", verbose=False):
-    inventory_dir = Path(inventory_dir)
+def generate_playbook_commands(hosts_file="hosts.json", repo_dir="repo", commands_dir="commands", verbose=False):
     repo_dir = Path(repo_dir)
     commands_dir = Path(commands_dir)
 
@@ -68,19 +114,14 @@ def generate_playbook_commands(inventory_dir="inventory", repo_dir="repo", comma
         shutil.rmtree(commands_dir)
     commands_dir.mkdir(parents=True, exist_ok=True)
 
-    for env_dir in sorted(p for p in inventory_dir.iterdir() if p.is_dir()):
-        branch = env_dir.name
-        inventory_path = env_dir / "hosts.yml"
+    hosts = load_hosts(hosts_file)
+    envs = group_by_env(hosts)
+
+    for branch, roles in sorted(envs.items()):
         branch_dir = repo_dir / branch
 
-        if not inventory_path.is_file():
-            if verbose:
-                print(f"ERROR: no hosts.yml found under {env_dir}")
-            continue
-
         if not branch_dir.is_dir():
-            if verbose:
-                print(f"ERROR: branch '{branch}' not found under {repo_dir} (expected {branch_dir})")
+            print(f"WARNING: branch '{branch}' not found under {repo_dir} (expected {branch_dir}); skipping this env", file=sys.stderr)
             continue
 
         env_vars = {}
@@ -94,22 +135,20 @@ def generate_playbook_commands(inventory_dir="inventory", repo_dir="repo", comma
         if collections_path.is_dir():
             env_vars["ANSIBLE_COLLECTIONS_PATH"] = str(collections_path)
 
-        for group in groups_in_inventory(inventory_path):
-            playbook_path = branch_dir / "playbooks" / f"{group}.yml"
+        for role in sorted(roles):
+            playbook_path = branch_dir / "playbooks" / f"{role}.yml"
             if not playbook_path.is_file():
-                if verbose:
-                    print(f"WARNING: role '{group}' has no playbook at {playbook_path}; skipping")
+                print(f"WARNING: role '{role}' has no playbook at {playbook_path}; skipping", file=sys.stderr)
                 continue
-            ansible_cmd = f'ansible-playbook -i {inventory_path} --limit "${{1:-{group}}}" {playbook_path}'
-            script_path = commands_dir / f"{branch}_{group}.sh"
-            write_command_script(script_path, env_vars, ansible_cmd, verbose=verbose)
+            script_path = commands_dir / f"{branch}_{role}.sh"
+            write_command_script(script_path, env_vars, playbook_path, verbose=verbose)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
-        "--inventory-dir", default="inventory",
-        help="Directory containing per-env inventory subdirectories (default: %(default)s)",
+        "--hosts-file", default="hosts.json",
+        help="Path to the netbox-style hosts JSON file, to determine which roles are assigned to each env (default: %(default)s)",
     )
     parser.add_argument(
         "--repo-dir", default="repo",
@@ -119,10 +158,10 @@ def main():
         "--commands-dir", default="commands",
         help="Directory to write one script per ansible-playbook command into (default: %(default)s)",
     )
-    parser.add_argument("-v", "--verbose", action="store_true", help="Print branch/role warnings and errors, and each script written")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Print each script written (branch/role warnings always print, regardless of this flag)")
     args = parser.parse_args()
 
-    generate_playbook_commands(args.inventory_dir, args.repo_dir, args.commands_dir, verbose=args.verbose)
+    generate_playbook_commands(args.hosts_file, args.repo_dir, args.commands_dir, verbose=args.verbose)
 
 
 if __name__ == "__main__":

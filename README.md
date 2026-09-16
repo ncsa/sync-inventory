@@ -17,13 +17,13 @@ automatically:
 3. **Install each branch's dependencies** (roles and collections), so
    different branches can rely on different dependency versions without
    stepping on each other.
-4. **Build an Ansible inventory per environment**, complete with that
-   environment's own variables — so real settings actually apply, and two
-   environments with the same group name never share values by accident.
-5. **Generate the actual `ansible-playbook` commands** to run, one per
+4. **Generate the actual `ansible-playbook` commands** to run, one per
    environment/role, each fully self-contained (its own config, its own
    dependencies) so running several environments back to back never lets
-   one leak into another.
+   one leak into another. No inventory file is generated — each branch's
+   own `ansible.cfg` is expected to declare its own inventory, the same as
+   it would for a human running `ansible-playbook` by hand from that
+   checkout.
 
 The end result sitting in the project directory: a `commands/` folder with
 one ready-to-run script per environment/role (e.g.
@@ -32,12 +32,25 @@ only generates these; running one (or all of them) is a separate step, with
 `run-play` (see [Quick guide](#quick-guide) below).
 
 It's built to keep working even when something's incomplete or unreachable.
-A host pointed at a branch that doesn't exist, or a role with no matching
-playbook, gets skipped and reported rather than stopping everything else.
-Losing the connection to NetBox or the git remote just means it falls back
-to whatever it already had, rather than failing outright. All of this
-reporting is quiet by default — pass `-v`/`--verbose` (on `sync-inventory`
-or any individual command) when you want to see it.
+An env pointed at a branch that isn't checked out, or a role with no
+matching playbook, gets skipped and reported rather than stopping
+everything else. Losing the connection to NetBox or the git remote just
+means it falls back to whatever it already had, rather than failing
+outright. Most warnings and errors always print to stderr, regardless of
+`-v`/`--verbose` — that flag mainly adds routine progress output on top,
+with one exception: `fetch-meta`'s per-host warnings (a NetBox entry with
+no `dns_name`, or missing `role`/`env`) are noisy at NetBox-fleet scale, so
+those stay `-v`-gated like routine progress does.
+
+Skipping happens per **env** or per **(env, role)**, never per individual
+host — no inventory file is generated anymore (see below), so individual
+hostnames in `hosts.json` aren't used to decide anything; they only
+determine which `(env, role)` combinations need a script. Concretely: if
+an env's branch isn't checked out under `repo/`, every role/host assigned
+to that env is skipped. If a role has no matching playbook in that branch,
+just that role is skipped, but for every host that shares it in that env —
+there's no way to skip one specific host while keeping others in the same
+`(env, role)` pair generating a script.
 
 ## Install
 
@@ -51,8 +64,8 @@ source .venv/bin/activate
 pip install -e .
 ```
 
-This installs eight commands into your virtualenv: `sync-inventory`,
-`fetch-meta`, `pull-repo`, `install-requirements`, `generate-inventory`,
+This installs seven commands into your virtualenv: `sync-inventory`,
+`fetch-meta`, `pull-repo`, `install-requirements`,
 `generate-playbook-commands`, `run-play`, and `list-vms`.
 
 ### Configuration
@@ -80,8 +93,8 @@ export REPO_URL=git@example.com:org/ansible-playbooks.git
 ## Quick guide
 
 Run the whole pipeline (fetch metadata, mirror branches, regenerate
-inventories and commands). `-u/--repo-url` (or `REPO_URL` in the
-environment) is required — there's no default:
+commands). `-u/--repo-url` (or `REPO_URL` in the environment) is required
+— there's no default:
 
 ```bash
 sync-inventory -u git@example.com:org/ansible-playbooks.git
@@ -100,11 +113,18 @@ run-play --all
 Each run is logged to its own file under `logs/`, named after the script
 (e.g. `logs/pttran3_test_branch_proxmox.log`).
 
-Target a single host instead of the script's whole group, e.g. to test one
-box before rolling out to the rest:
+Target a single host on top of whatever the playbook's own `hosts:` key
+already targets, e.g. to test one box before rolling out to the rest:
 
 ```bash
 run-play -s pttran3_test_branch_proxmox -H some-host.example.com
+```
+
+Override the inventory file instead of relying on the branch's own
+`ansible.cfg` (works with `-s` or `--all`):
+
+```bash
+run-play -s pttran3_test_branch_proxmox -i other/hosts.yml
 ```
 
 See what's available to run (the exact names `-s` accepts):
@@ -127,8 +147,8 @@ Point it at a different playbook repo, or override other non-default paths
 sync-inventory --repo-url git@example.com:org/other-repo.git --commands-dir ~/generated-commands
 ```
 
-See routine progress and every warning/error as it happens (quiet by
-default otherwise):
+See routine progress too, on top of the warnings/errors that always print
+(quiet by default otherwise):
 
 ```bash
 sync-inventory -u git@example.com:org/ansible-playbooks.git -v
@@ -154,7 +174,6 @@ Run an individual step on its own (each accepts `--help` for its own flags):
 fetch-meta
 pull-repo git@example.com:org/ansible-playbooks.git
 install-requirements
-generate-inventory
 generate-playbook-commands
 run-play -s pttran3_test_branch_proxmox
 ```
